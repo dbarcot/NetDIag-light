@@ -6,7 +6,7 @@ A single Windows exe that quickly locates common network problems: link vs LAN v
 
 ## 2. Scope
 
-**In scope:** Windows 10/11 and Server 2016+; IPv4; console mtr-style live view; loopback read-only web UI with graphs; JSON config; dependency-gated tests; headless report mode.
+**In scope:** Windows 10/11 and Server 2016+, **amd64 only** (v1 ships no ARM64 build: the available resource compiler, mingw `windres`, cannot emit ARM64 COFF for the manifest `.syso`); IPv4; console mtr-style live view; loopback read-only web UI with graphs; JSON config; dependency-gated tests; headless report mode.
 
 **Out of scope (v1):** proxy handling; auto-opening a browser; editing targets at runtime (CLI or UI); throughput/bufferbloat tests; own server infrastructure; IPv6; other operating systems; **VPN detection and any VPN-specific logic** (if a VPN is on, tests run over whatever adapter Windows routes through, without special handling).
 
@@ -18,9 +18,11 @@ Running with **no arguments prints help and exits 0**.
 netdiag run [--config <path>] [--port <n>] [--log <path>] [--csv <dir>]
 netdiag run --headless --duration <d> --json <path> [--csv <dir>] [--config <path>]
 netdiag save-config [<path>]
-netdiag help | -h | --help
+netdiag help | -h | -help | --help
 netdiag version
 ```
+
+- `run -h` (or `-help`, `--help`) prints the full help; `save-config -h` prints only the save-config usage. Help always exits 0.
 
 - `run` — start probing, console view and web UI.
 - `--port <n>` — overrides `ui.port` (1–65535).
@@ -150,6 +152,7 @@ Redirects are **not** followed; a redirect (3xx) or a status/body mismatch from 
 ### 4.5 Validation rules
 
 - Merge: objects merge key by key; an array in the user file replaces the default array as a whole (its entries never inherit fields from default entries). A UTF-8 BOM is accepted.
+- Required keys in user-supplied array entries — `targets.ping[]` / `targets.tcp[]`: `name`, `host`; `targets.http_check[]`: `url`, `expect_status` — are reported as `<path>: required` when absent (not as a range error on the zero value).
 - All errors are reported at once, one line per key path. A check relative to another key (e.g. `window.min_samples` ≤ `window.seconds`, `mos_good` ≥ `mos_min`, CPU boundaries ascending, custom target cap) runs only when that key itself is valid.
 - `targets.internet_icmp`, `targets.internet_tcp` and `targets.public_dns` must be **IPv4 literals** (non-empty lists): they open L4 and must not depend on DNS.
 - Hosts are IPv4 or RFC 1123 hostnames; IPv6 literals are rejected with an explicit "IPv6 is not supported" message. A purely numeric last label (`1.1.1`) is invalid.
@@ -241,7 +244,7 @@ Root cause = lowest closed gate. Quality verdicts are evaluated only when all lo
 | `DNS_LOCAL_FAIL` | L5 closed, DNS-02 ok | 16 |
 | `DNS_FAIL` | L5 closed, DNS-02 fails | 17 |
 | `UDP_BLOCKED` | all generic STUN fail, NET-04 ok | 18 |
-| `TEAMS_UDP_BLOCKED` | all TEAMS-01 ports fail, TEAMS-02 ok | 19 |
+| `TEAMS_UDP_BLOCKED` | all TEAMS-01 ports fail, TEAMS-02 TCP 443 ok | 19 |
 | `TEAMS_PARTIAL_PORTS` | some (not all) ports in `teams.udp_ports` fail (report which; labels: 3478 general, 3479 audio, 3480 video, 3481 sharing) | 20 |
 | `MEET_UDP_BLOCKED` | MEET-01 fails, while SVC-01 TLS to `meet.google.com` or NET-04 is ok | 21 |
 | `MTU_ISSUE` | path MTU < `thresholds.mtu_min` (default 1400) | 22 |
@@ -255,13 +258,21 @@ Priority when several apply: table order top to bottom.
 - While any of L1–L4 is still `unknown`, the primary verdict is `CHECKING` (shown in console/web, never an exit code by itself).
 - **Call quality status** (console + web): `Measuring…` before `window.min_samples`; `Good` when MOS ≥ `thresholds.mos_good` and no quality threshold is exceeded; `Poor` when `QUALITY_POOR_VOIP` conditions hold; otherwise `Fair`.
 
-Info flags (no exit code): `GW_ICMP_BLOCKED`, `ICMP_BLOCKED` (NET-01 fails, NET-04 ok), `SYMMETRIC_NAT`, `WIFI_WEAK` (signal < `thresholds.wifi_signal_pct`, default 50), `WIFI_24GHZ` (connected on the 2.4 GHz band), `CPU_HIGH` (10 s average CPU ≥ `thresholds.cpu_high_pct`; shown alongside network verdicts because a busy CPU also degrades calls), `TEAMS_SRC_PORTS_BLOCKED`, `TEAMS_DISABLED` (`teams.relays` empty), `SERVICE_UNREACHABLE:<host>` (SVC-01 DNS or TLS fails for that service while L5 is open), `CUSTOM_TARGET_DOWN:<name>`, `CSV_WRITE_ERROR`.
+Info flags (no exit code): `GW_ICMP_BLOCKED`, `ICMP_BLOCKED` (NET-01 fails, NET-04 ok), `SYMMETRIC_NAT`, `WIFI_WEAK` (signal < `thresholds.wifi_signal_pct`, default 50), `WIFI_24GHZ` (connected on the 2.4 GHz band), `CPU_HIGH` (10 s average CPU ≥ `thresholds.cpu_high_pct`; shown alongside network verdicts because a busy CPU also degrades calls), `TEAMS_SRC_PORTS_BLOCKED`, `TEAMS_DISABLED` (`teams.relays` empty), `TEAMS_RELAY_UNREACHABLE` (see 8.2), `SERVICE_UNREACHABLE:<host>` (SVC-01 DNS or TLS fails for that service while L5 is open), `CUSTOM_TARGET_DOWN:<name>`, `CSV_WRITE_ERROR`.
 
 Exit codes 1 = runtime error, 2 = config error.
 
 ### 8.1 Headless verdict
 
 The exit code is the highest-priority primary verdict (table order) that was in effect at any time during the run, ignoring `CHECKING`. If the run never left `CHECKING` (e.g. too short), exit 1. The report carries both `worst_verdict` and `final_verdict`.
+
+### 8.2 Teams relay unreachable
+
+The default relay (`worldaz.tr.teams.microsoft.com`) is not an official test endpoint and may stop answering. A dead relay must not be reported as a blocked network.
+
+- `TEAMS_RELAY_UNREACHABLE` (info flag) is raised when L4 is open, MEET-01 **or** RT-01 (generic STUN) works, and either the relay hostname does not resolve, or **all** TEAMS-01 UDP ports **and** TEAMS-02 TCP 443 fail.
+- While it is raised, `TEAMS_UDP_BLOCKED` and `TEAMS_PARTIAL_PORTS` are not raised, and the console/web Teams status shows `Teams test relay not responding - result unknown`.
+- `TEAMS_UDP_BLOCKED` still requires TEAMS-02 TCP 443 to the relay to work, i.e. the relay is alive and only UDP is failing.
 
 ## 9. Console view (`run`)
 

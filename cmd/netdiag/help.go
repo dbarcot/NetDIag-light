@@ -10,7 +10,7 @@ const usageText = `Usage:
   netdiag run --headless --duration <d> --json <path> [--csv <dir>]
               [--config <path>]
   netdiag save-config [<path>]
-  netdiag help | -h | --help
+  netdiag help | -h | -help | --help
   netdiag version
 `
 
@@ -40,6 +40,15 @@ Options for run:
 Exit codes:
   0 OK, 1 runtime or usage error, 2 config error,
   10-25 network problem found (see the verdict in the report).
+`
+
+const saveConfigUsage = `Usage:
+  netdiag save-config [<path>]
+
+Write the full default config (every key) to <path>. Without <path>:
+netdiag.json next to the exe, or %APPDATA%\netdiag\netdiag.json if that
+folder is not writable. Never overwrites an existing file. Prints the
+path written.
 `
 
 func (a *app) printUsage(w io.Writer) {

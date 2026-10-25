@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -144,6 +145,80 @@ func TestSave_RealFilesystem(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 1 {
 		t.Errorf("want only %s in dir, got %d entries", FileName, len(entries))
+	}
+}
+
+func TestSave_TargetCreatedBeforeRenameIsNotOverwritten(t *testing.T) {
+	t.Parallel()
+	fsys := NewFakeFS()
+	target := filepath.Join(testPaths.ExeDir, FileName)
+	fsys.BeforeRename = func() { fsys.Put(target, []byte("other process")) }
+	_, err := Save(fsys, "", testPaths)
+	if !errors.Is(err, ErrExists) {
+		t.Fatalf("want ErrExists, got %v", err)
+	}
+	if b, _ := fsys.Get(target); string(b) != "other process" {
+		t.Errorf("target overwritten: %q", b)
+	}
+	if len(fsys.Files) != 1 {
+		t.Errorf("temp file left: %v", fsys.Files)
+	}
+}
+
+// racingOSFS creates the target right before the real non-replacing move.
+type racingOSFS struct {
+	OSFS
+	content []byte
+}
+
+func (r racingOSFS) RenameNoReplace(oldpath, newpath string) error {
+	if err := os.WriteFile(newpath, r.content, 0o644); err != nil {
+		return err
+	}
+	return r.OSFS.RenameNoReplace(oldpath, newpath)
+}
+
+func TestSave_RealFilesystemRaceNeverOverwrites(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, FileName)
+	_, err := Save(racingOSFS{content: []byte("other process")}, target, Paths{})
+	if !errors.Is(err, ErrExists) {
+		t.Fatalf("want ErrExists, got %v", err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != "other process" {
+		t.Errorf("target overwritten: %q", b)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("temp file left: %d entries", len(entries))
+	}
+}
+
+func TestOSFS_RenameNoReplace(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	src, dst := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	if err := os.WriteFile(src, []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := (OSFS{}).RenameNoReplace(src, dst); !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("want fs.ErrExist, got %v", err)
+	}
+	if b, _ := os.ReadFile(dst); string(b) != "old" {
+		t.Errorf("target replaced: %q", b)
+	}
+	if err := os.Remove(dst); err != nil {
+		t.Fatal(err)
+	}
+	if err := (OSFS{}).RenameNoReplace(src, dst); err != nil {
+		t.Fatalf("move to free name: %v", err)
+	}
+	if b, _ := os.ReadFile(dst); string(b) != "new" {
+		t.Errorf("moved content = %q", b)
 	}
 }
 

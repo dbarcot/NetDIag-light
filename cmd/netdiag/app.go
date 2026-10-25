@@ -51,7 +51,7 @@ func (a *app) dispatch(args []string) (code int, shownHelp bool) {
 		return exitOK, true
 	}
 	switch cmd, rest := args[0], args[1:]; cmd {
-	case "help", "-h", "--help":
+	case "help", "-h", "-help", "--help":
 		a.printHelp(a.stdout)
 		return exitOK, true
 	case "version":
@@ -84,7 +84,7 @@ func (a *app) usageError(format string, args ...any) (int, bool) {
 
 func (a *app) saveConfig(args []string) (int, bool) {
 	if len(args) == 1 && isHelpArg(args[0]) {
-		a.printHelp(a.stdout)
+		fmt.Fprint(a.stdout, saveConfigUsage)
 		return exitOK, true
 	}
 	if len(args) > 1 {

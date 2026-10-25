@@ -282,6 +282,56 @@ func TestParse_ErrorsNameExactKeyPath(t *testing.T) {
 	}
 }
 
+func TestParse_MissingRequiredKeysInArrayEntries(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		data string
+		want []string
+	}{
+		{"http_check expect_status", `{"targets":{"http_check":[{"url":"http://x.example/"}]}}`, []string{"targets.http_check[0].expect_status"}},
+		{"http_check url", `{"targets":{"http_check":[{"expect_status":204}]}}`, []string{"targets.http_check[0].url"}},
+		{"http_check both, second entry", `{"targets":{"http_check":[{"url":"http://x.example/","expect_status":200},{}]}}`, []string{"targets.http_check[1].url", "targets.http_check[1].expect_status"}},
+		{"ping name", `{"targets":{"ping":[{"host":"10.0.0.1"}]}}`, []string{"targets.ping[0].name"}},
+		{"ping host", `{"targets":{"ping":[{"name":"a"}]}}`, []string{"targets.ping[0].host"}},
+		{"tcp name and host", `{"targets":{"tcp":[{"rate":2}]}}`, []string{"targets.tcp[0].name", "targets.tcp[0].host"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := Parse([]byte(tt.data))
+			var ve *ValidationError
+			if !errors.As(err, &ve) {
+				t.Fatalf("want *ValidationError, got %v", err)
+			}
+			if len(ve.Fields) != len(tt.want) {
+				t.Fatalf("errors = %v, want paths %v", ve.Fields, tt.want)
+			}
+			for i, f := range ve.Fields {
+				if f.Path != tt.want[i] || f.Msg != "required" {
+					t.Errorf("error %d = %v, want %s: required", i, f, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestParse_RequiredKeyPresentButInvalidKeepsRangeError(t *testing.T) {
+	t.Parallel()
+	_, err := Parse([]byte(`{"targets":{"http_check":[{"url":"http://x.example/","expect_status":0}]}}`))
+	if err == nil || err.Error() != "targets.http_check[0].expect_status: must be between 100 and 599, got 0" {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestParse_RequiredAndOtherErrorsTogether(t *testing.T) {
+	t.Parallel()
+	paths := errorPaths(t, `{"ui":{"port":0},"targets":{"ping":[{"host":"10.0.0.1"}]}}`)
+	if strings.Join(paths, ",") != "targets.ping[0].name,ui.port" {
+		t.Errorf("paths = %v", paths)
+	}
+}
+
 func TestParse_ReportsAllErrors(t *testing.T) {
 	t.Parallel()
 	paths := errorPaths(t, `{"ui": {"port": 0}, "rates": {"wifi": 0}}`)

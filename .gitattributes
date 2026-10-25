@@ -1,0 +1,6 @@
+# LF everywhere so golden files compare byte for byte on any checkout.
+* text=auto eol=lf
+
+*.syso binary
+*.png binary
+*.exe binary

@@ -53,8 +53,10 @@ func saveTo(fsys FS, path string, data []byte) error {
 	return writeAtomic(fsys, path, data)
 }
 
-// writeAtomic writes to a temp file in the same directory and renames it
-// into place; the temp file is removed on any failure.
+// writeAtomic writes to a temp file in the same directory and moves it
+// into place without replacing an existing file, so a file created after
+// the Stat check is never overwritten. The temp file is removed on any
+// failure.
 func writeAtomic(fsys FS, path string, data []byte) (err error) {
 	tmp, err := fsys.CreateTemp(filepath.Dir(path), ".netdiag-*.tmp")
 	if err != nil {
@@ -72,5 +74,8 @@ func writeAtomic(fsys FS, path string, data []byte) (err error) {
 	if err = tmp.Close(); err != nil {
 		return err
 	}
-	return fsys.Rename(tmp.Name(), path)
+	if err = fsys.RenameNoReplace(tmp.Name(), path); errors.Is(err, fs.ErrExist) {
+		err = fmt.Errorf("refusing to overwrite %s: %w", path, ErrExists)
+	}
+	return err
 }

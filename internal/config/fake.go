@@ -18,8 +18,11 @@ type FakeFS struct {
 	ReadOnly   map[string]bool
 	Dirs       map[string]bool // directories created with MkdirAll
 	FailWrite  bool            // TempFile.Write fails
-	FailRename bool            // Rename fails
-	seq        int
+	FailRename bool            // RenameNoReplace fails
+	// BeforeRename, if set, runs at the start of RenameNoReplace (without
+	// the lock held), e.g. to create the target and simulate a race.
+	BeforeRename func()
+	seq          int
 }
 
 // NewFakeFS returns an empty FakeFS.
@@ -78,13 +81,19 @@ func (f *FakeFS) CreateTemp(dir, pattern string) (TempFile, error) {
 	return &fakeTemp{fs: f, name: name}, nil
 }
 
-func (f *FakeFS) Rename(oldpath, newpath string) error {
+func (f *FakeFS) RenameNoReplace(oldpath, newpath string) error {
+	if f.BeforeRename != nil {
+		f.BeforeRename()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.FailRename {
 		return &fs.PathError{Op: "rename", Path: oldpath, Err: errors.New("injected rename failure")}
 	}
 	oldpath, newpath = filepath.Clean(oldpath), filepath.Clean(newpath)
+	if _, exists := f.Files[newpath]; exists {
+		return &fs.PathError{Op: "rename", Path: newpath, Err: fs.ErrExist}
+	}
 	b, ok := f.Files[oldpath]
 	if !ok {
 		return &fs.PathError{Op: "rename", Path: oldpath, Err: fs.ErrNotExist}

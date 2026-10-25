@@ -68,16 +68,29 @@ func TestMain_NoArgsPrintsHelpAndExitsZero(t *testing.T) {
 
 func TestMain_HelpAliases(t *testing.T) {
 	t.Parallel()
-	for _, arg := range []string{"help", "-h", "--help"} {
+	full := newTestApp(2)
+	full.main(nil)
+	for _, args := range [][]string{{"help"}, {"-h"}, {"-help"}, {"--help"}, {"run", "-h"}, {"run", "-help"}, {"run", "--help"}} {
 		a := newTestApp(2)
-		if code := a.main([]string{arg}); code != exitOK || !strings.Contains(a.out.String(), "Usage:") {
-			t.Errorf("%s: exit %d, out %q", arg, code, a.out)
+		if code := a.main(args); code != exitOK || a.out.String() != full.out.String() {
+			t.Errorf("%v: exit %d, want full help, got %q", args, code, a.out)
 		}
 	}
-	for _, args := range [][]string{{"run", "-h"}, {"run", "--help"}, {"save-config", "--help"}} {
+}
+
+func TestSaveConfig_HelpIsCommandSpecific(t *testing.T) {
+	t.Parallel()
+	for _, arg := range []string{"-h", "-help", "--help"} {
 		a := newTestApp(2)
-		if code := a.main(args); code != exitOK || !strings.Contains(a.out.String(), "Usage:") {
-			t.Errorf("%v: exit %d, out %q", args, code, a.out)
+		if code := a.main([]string{"save-config", arg}); code != exitOK {
+			t.Errorf("%s: exit %d", arg, code)
+		}
+		out := a.out.String()
+		if !strings.HasPrefix(out, "Usage:\n  netdiag save-config [<path>]\n") || strings.Contains(out, "netdiag run") {
+			t.Errorf("%s: want save-config usage only, got %q", arg, out)
+		}
+		if len(a.fs.Files) != 0 {
+			t.Errorf("%s: help must not write files", arg)
 		}
 	}
 }

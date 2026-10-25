@@ -79,6 +79,8 @@ func Parse(data []byte) (*Config, error) {
 	if err := errs.err(); err != nil {
 		return nil, err
 	}
+	var missing errList
+	checkRequired(raw, &missing)
 	applyEntryDefaults(raw)
 	merged, err := json.Marshal(raw)
 	if err != nil {
@@ -92,11 +94,63 @@ func Parse(data []byte) (*Config, error) {
 	if err := json.Unmarshal(merged, c); err != nil {
 		return nil, err
 	}
-	if err := c.Validate(); err != nil {
+	if err := withRequired(missing.fields, c.Validate()); err != nil {
 		return nil, err
 	}
 	c.normalize()
 	return c, nil
+}
+
+// requiredKeys are the keys every user-supplied entry of these arrays must
+// set; there is no sensible default for them.
+var requiredKeys = []struct {
+	section, array string
+	keys           []string
+}{
+	{"targets", "ping", []string{"name", "host"}},
+	{"targets", "tcp", []string{"name", "host"}},
+	{"targets", "http_check", []string{"url", "expect_status"}},
+}
+
+func checkRequired(raw map[string]any, errs *errList) {
+	for _, r := range requiredKeys {
+		section, _ := raw[r.section].(map[string]any)
+		list, _ := section[r.array].([]any)
+		for i, e := range list {
+			m, _ := e.(map[string]any)
+			for _, k := range r.keys {
+				if _, ok := m[k]; !ok {
+					errs.add(indexPath(r.section+"."+r.array, i)+"."+k, "required")
+				}
+			}
+		}
+	}
+}
+
+// withRequired combines "required" errors with validation errors, dropping
+// the validation error for a missing key (it would only describe the zero
+// value, e.g. "must be between 100 and 599, got 0").
+func withRequired(missing []FieldError, verr error) error {
+	var ve *ValidationError
+	if verr != nil && !errors.As(verr, &ve) {
+		return verr
+	}
+	fields := append([]FieldError(nil), missing...)
+	if ve != nil {
+		skip := make(map[string]bool, len(missing))
+		for _, f := range missing {
+			skip[f.Path] = true
+		}
+		for _, f := range ve.Fields {
+			if !skip[f.Path] {
+				fields = append(fields, f)
+			}
+		}
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return &ValidationError{Fields: fields}
 }
 
 func decodeRaw(data []byte) (map[string]any, error) {

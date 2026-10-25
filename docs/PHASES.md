@@ -182,6 +182,7 @@ Rules (from `CLAUDE.md`): finish phases in order; tests are written during the p
 
 **Tests**
 - Unit with in-test STUN responders listening on multiple ports: all ports open → no verdict; one port closed → `TEAMS_PARTIAL_PORTS` naming the feature; all closed + TCP ok → `TEAMS_UDP_BLOCKED`.
+- Relay unreachable (SPEC §8.2): relay DNS fails, or all UDP ports and TCP 443 fail while MEET-01 or RT-01 works → `TEAMS_RELAY_UNREACHABLE`, no `TEAMS_UDP_BLOCKED`/`TEAMS_PARTIAL_PORTS`, status text "Teams test relay not responding - result unknown"; scenario `teams_relay_unreachable`.
 - SRC-01: occupied ports in range handled; range exhausted → flag.
 - Scenarios + golden + e2e updated for Teams/Meet states.
 - Integration: MEET-01 against Google STUN; TEAMS-01 port 3478 and TEAMS-02 against `worldaz.tr.teams.microsoft.com`.
