@@ -1,0 +1,15 @@
+{
+  "name": "csv_write_error",
+  "description": "The CSV log cannot be written from t=10s (file locked by Excel) until t=30s",
+  "duration_s": 40,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "events": [ { "at_s": 10, "csv_error": true }, { "at_s": 30, "csv_error": false } ],
+  "expect": [
+    { "at_s": 20, "verdict": "OK", "flags_include": ["CSV_WRITE_ERROR"] },
+    { "at_s": 35, "verdict": "OK", "flags_exclude": ["CSV_WRITE_ERROR"] }
+  ]
+}

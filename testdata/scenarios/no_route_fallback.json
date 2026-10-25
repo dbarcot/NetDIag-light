@@ -1,0 +1,11 @@
+{
+  "name": "no_route_fallback",
+  "description": "Adapter has an address but no default route: primary adapter chosen by the fallback, gateway gate closed",
+  "duration_s": 20,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "dns_servers": ["192.168.1.1"],
+    "route": "none"
+  },
+  "expect": [ { "at_s": 10, "verdict": "GW_UNREACHABLE", "exit_code": 13, "primary_adapter": "Ethernet", "gates": { "L3": "closed" }, "skipped": ["LAN-01"] } ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "custom_target_down",
+  "description": "A configured file server stops answering",
+  "duration_s": 30,
+  "config": { "targets": { "ping": [ { "name": "fileserver", "host": "192.168.1.50" } ] } },
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probe": "CUST-ICMP", "result": "fail" } ],
+  "expect": [ { "at_s": 20, "verdict": "OK", "flags_include": ["CUSTOM_TARGET_DOWN:fileserver"] } ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "isp_down",
+  "description": "Internet connection drops at t=10s; the LAN keeps working",
+  "duration_s": 30,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probes": ["NET-01", "NET-04", "RT-01"], "from_s": 10, "result": "fail" } ],
+  "expect": [
+    { "at_s": 5, "verdict": "OK" },
+    { "at_s": 20, "verdict": "ISP_DOWN", "exit_code": 15, "gates": { "L3": "open", "L4": "closed" }, "skipped": ["DNS-02"] }
+  ]
+}

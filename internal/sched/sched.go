@@ -41,6 +41,10 @@ type Series struct {
 	Gate func() Decision
 }
 
+// WaitRetry is how soon a series asks its gate again after Wait; once it
+// runs, its grid restarts from that run.
+const WaitRetry = time.Second
+
 // MaxStartOffset caps the random start offset (SPEC §5: probes get a small
 // random offset so they don't fire in bursts).
 const MaxStartOffset = time.Second
@@ -94,34 +98,35 @@ func (s *Scheduler) Run(ctx context.Context, series []Series, sink func(probe.Sa
 func (s *Scheduler) loop(ctx context.Context, sr Series, next time.Time, sink func(probe.Sample)) {
 	for {
 		t := s.clock.NewTimer(next.Sub(s.clock.Now()))
+		var now time.Time // when the timer fired: the tick's own time
 		select {
 		case <-ctx.Done():
 			t.Stop()
 			return
-		case <-t.C():
+		case now = <-t.C():
 		}
-		now := s.clock.Now()
 		d := Decision{Action: Run}
 		if sr.Gate != nil {
 			d = sr.Gate()
 		}
+		if d.Action == Wait {
+			// The gate is not decided yet: ask again soon instead of a whole
+			// interval later (a 10-minute MTU-01 must still run at start);
+			// the grid restarts from the run that follows.
+			next = now.Add(min(sr.Interval, WaitRetry))
+			continue
+		}
 		var sm probe.Sample
-		emit := true
-		switch d.Action {
-		case Run:
+		if d.Action == Skip {
+			sm = probe.SkippedSample(d.Reason)
+		} else {
 			sm = s.runProbe(ctx, sr)
 			if ctx.Err() != nil {
 				return // cancelled mid-run: not a measurement
 			}
-		case Skip:
-			sm = probe.SkippedSample(d.Reason)
-		case Wait:
-			emit = false
 		}
-		if emit {
-			sm.Time, sm.Series, sm.Probe, sm.Target = now, sr.ID, sr.Probe, sr.Target
-			sink(sm)
-		}
+		sm.Time, sm.Series, sm.Probe, sm.Target = now, sr.ID, sr.Probe, sr.Target
+		sink(sm)
 		next = nextSlot(next, sr.Interval, s.clock.Now())
 	}
 }

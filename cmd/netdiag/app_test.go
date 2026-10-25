@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"path/filepath"
@@ -9,9 +10,48 @@ import (
 	"strings"
 	"testing"
 
+	"netdiag/internal/clock"
 	"netdiag/internal/config"
 	"netdiag/internal/sysapi"
 )
+
+const simNoLink = `{"name": "no_link", "description": "cable out", "duration_s": 5,
+	"sysinfo": {"adapter": {"type": "ethernet", "up": false}, "dns_servers": []}}`
+
+func TestRun_SimPlaysScenario(t *testing.T) {
+	t.Parallel()
+	a := newTestApp(2)
+	a.fs.Put(`C:\sc\no_link.json`, []byte(simNoLink))
+	if code := a.main([]string{"run", "--sim", `C:\sc\no_link.json`}); code != exitOK {
+		t.Fatalf("exit %d, stderr %q", code, a.errOut)
+	}
+	out := a.out.String()
+	if !strings.Contains(out, `simulation "no_link"`) || !strings.Contains(out, "end of simulation: NO_LINK (no link) [exit 10]") {
+		t.Errorf("output:\n%s", out)
+	}
+}
+
+func TestRun_SimErrors(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		args []string
+		file string
+		want string
+	}{
+		{[]string{"run", "--sim", `C:\nope.json`}, "", "--sim:"},
+		{[]string{"run", "--sim", `C:\bad.json`}, `{"name": "x"}`, "scenario"},
+		{[]string{"run", "--sim", `C:\bad.json`, "--headless", "--duration", "1m", "--json", `C:\r.json`}, simNoLink, "not implemented"},
+	}
+	for _, tt := range tests {
+		a := newTestApp(2)
+		if tt.file != "" {
+			a.fs.Put(`C:\bad.json`, []byte(tt.file))
+		}
+		if code := a.main(tt.args); code != exitRuntime || !strings.Contains(a.errOut.String(), tt.want) {
+			t.Errorf("%v: exit %d, stderr %q", tt.args, code, a.errOut)
+		}
+	}
+}
 
 type testApp struct {
 	*app
@@ -37,6 +77,8 @@ func newTestApp(consoleCount int) *testApp {
 	fsys := config.NewFakeFS()
 	return &testApp{
 		app: &app{
+			ctx:     context.Background(),
+			clock:   clock.NewScaled(200), // simulations run 200× faster
 			stdin:   in,
 			stdout:  out,
 			stderr:  errOut,

@@ -1,0 +1,12 @@
+{
+  "name": "no_link",
+  "description": "Ethernet cable unplugged",
+  "duration_s": 20,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": false, "ipv4": "" },
+    "dns_servers": []
+  },
+  "expect": [
+    { "at_s": 10, "verdict": "NO_LINK", "exit_code": 10, "gates": { "L1": "closed" }, "skipped": ["LAN-01", "NET-01"] }
+  ]
+}

@@ -33,7 +33,7 @@ netdiag version
 - `--csv <dir>` — log every measurement to CSV files in `<dir>` (see §11.1). Overrides `csv.dir` from config.
 - `save-config` — write the full default config (every key expanded) to `<path>` (default: `netdiag.json` next to the exe; if not writable, `%APPDATA%\netdiag\netdiag.json`). Refuses to overwrite an existing file. Writes atomically (temp file + rename). Prints the path written. This is the **only** way a config file is created.
 - **Explorer double-click:** if the process is the only one attached to its console (`GetConsoleProcessList` returns 1), after printing help or after any non-zero exit (fatal, config or usage error) wait for Enter before exiting. `version` and successful commands do not wait.
-- Hidden developer flag `run --sim <scenario.json>` replaces real sysapi and probes with a scripted scenario (see `docs/TESTING.md`). Not shown in help.
+- Hidden developer flag `run --sim <scenario.json>` replaces real sysapi and probes with a scripted scenario (see `docs/TESTING.md`). Not shown in help. It uses the built-in defaults plus the scenario's own `config` block (`--config` is not read), runs for the scenario's `duration_s` in real time through the real scheduler, gates and verdicts, prints timestamped verdict/flag changes (plain format) and exits 0. Not combinable with `--headless` yet (Phase 9).
 
 ## 4. Configuration
 
@@ -223,13 +223,18 @@ Layers, each requiring the one below:
 Rules:
 - The probes that **define** a layer keep running while that layer is closed, so recovery is detected. Only the layers above pause.
 - Hysteresis: a gate closes after `gate.fail_count` consecutive failures and reopens after `gate.ok_count` consecutive successes.
-- **Start-up:** every gate starts `unknown`. From `unknown` it opens on the first success and closes after `gate.fail_count` consecutive failures (so a healthy network is green within ~1 s). Probes above an `unknown` gate wait (no samples) rather than recording skipped.
-- **Multiple defining probes:** a layer fed by several series (DNS-01 per adapter DNS server, NET-01 per target) counts a success when **any** of them succeeded in the latest round and a failure when **all** failed. DNS-01 placement (L3 vs L4) is decided per server: on-link if inside the adapter's IPv4 subnet.
+- **Start-up:** every gate starts `unknown`. From `unknown` it opens on the first success and closes after `gate.fail_count` consecutive failures (so a healthy network is green within ~1–2 s). Probes above an `unknown` gate wait (no samples) rather than recording skipped, and ask again after `min(interval, 1 s)` — a 10-minute MTU-01 still runs right after start; its grid restarts from that run.
+- **L1/L2** follow the primary adapter directly (adapter state is authoritative, no hysteresis).
+- **Rounds:** L3–L5 are evaluated by a gate tick about once per second. Each layer runs one round per *period* = the shortest interval among its defining series (L3, L4: 1 s; L5: `rates.dns_system`), so several samples in one period are one round. A round uses each series' latest result if it is fresh (at most 1.5 × its interval old; a skipped sample withdraws it).
+- **Multiple defining probes:** a round is a success when **any** fresh evidence is ok, and a failure when none is ok and at least one of the layer's own defining series failed (L4 evidence alone never fails L3). DNS-01 placement (L3 vs L4) is decided per server: on-link if inside the adapter's IPv4 subnet.
+- A layer that closes (or becomes unknown) makes every layer above it `unknown`: after recovery they are re-decided from fresh evidence.
+- **No DNS servers** on the primary adapter → L5 closed (`no DNS servers`) as soon as L4 is open.
+- **RT-01** defines L4 and therefore cannot wait for DNS: when a STUN server name does not resolve, the sample is `skipped` (`name not resolved`), never a failure.
 - Paused probes record **skipped** samples with the reason (`"skipped: gateway down"`). Skipped never counts as loss; graphs show gaps.
 - **L1/L2 outcomes:** no primary adapter, or the primary is down (with no route this means no hardware ethernet/Wi-Fi adapter is up; up virtual adapters do not count) → L1 closed → `NO_LINK`. Primary up with only 169.254.x.x addresses → `APIPA`. Primary up without any IPv4 → `NO_ADDRESS`.
 - **L3 evidence:** traffic that reaches the internet passes the gateway, so a successful L4-defining probe proves the gateway alive even when it ignores ping and its ARP entry is only stale. A stale/unconfirmed ARP entry alone never keeps L3 open.
 - **On-link route** (default route without a next hop): L3 counts as open when L2 is open; LAN-01 and LAN-02 record skipped samples with reason `no gateway (on-link route)`.
-- Gateway ping failing while ARP is Reachable/Permanent **or** L4 works → info flag `GW_ICMP_BLOCKED`, gate stays open.
+- Gateway ping failing (last `gate.fail_count` results) while ARP is Reachable/Permanent **or** internet traffic works right now (§8) → info flag `GW_ICMP_BLOCKED`, gate stays open.
 - Adapter change (Wi-Fi roam, cable, new IP, change of best-route adapter): re-evaluate from L1 upward, start new series for affected targets.
 - TRC-01 runs whenever L3 is open; it is most useful when L4 is closed.
 
@@ -267,7 +272,12 @@ Root cause = lowest closed gate. Quality verdicts are evaluated only when all lo
 
 Priority when several apply: table order top to bottom.
 
-- Loss and quality verdicts (`LAN_LOSS`, `ISP_LOSS`, `QUALITY_POOR_VOIP`, `UDP_BLOCKED`, Teams/Meet verdicts) need at least `window.min_samples` non-skipped samples in the window (STUN checks at 10 s: at least 3 results).
+- Loss and quality verdicts (`LAN_LOSS`, `ISP_LOSS`, `QUALITY_POOR_VOIP`) need at least `window.min_samples` non-skipped samples in the window. "Blocked/failing" conditions (`UDP_BLOCKED`, Teams/Meet verdicts, `GW_ICMP_BLOCKED`, `ICMP_BLOCKED`, `CUSTOM_TARGET_DOWN`) mean the last `gate.fail_count` non-skipped results of each series concerned all failed; "ok" means the newest non-skipped result is ok.
+- Exclusions: `LAN_LOSS` is not raised while `GW_ICMP_BLOCKED` (a gateway that ignores ping is not lossy); `ISP_LOSS` is not raised while `ICMP_BLOCKED`.
+- **Settled loss:** `LAN_LOSS` and `ISP_LOSS` use the window loss **without the newest run of consecutive failures** (an ongoing run is either the start of an outage, which the gates decide within `gate.fail_count` rounds, or becomes loss as soon as a success follows). Without this, the first lost ping of a gateway outage would read as `LAN_LOSS` for the seconds before `GW_UNREACHABLE` (seen in the `gw_down` simulation). The loss % shown in tables is the plain window loss.
+- `GW_ICMP_BLOCKED` needs the gateway's ARP entry Reachable/Permanent, or internet traffic working *now* (L4 open and the newest result of a NET-01, NET-04 or RT-01 series ok) — not merely an L4 gate still open during its hysteresis.
+- `CAPTIVE_PORTAL`: the newest result of any HTTP-01 check is a redirect/mismatch. `MTU_ISSUE` uses the newest MTU-01 result of either target. `SYMMETRIC_NAT`: the newest NAT-01 result says symmetric. `SERVICE_UNREACHABLE:<host>` and `TEAMS_SRC_PORTS_BLOCKED`: the newest result of that series failed (`TEAMS_SRC_PORTS_BLOCKED` is not raised while `TEAMS_RELAY_UNREACHABLE`).
+- Call-quality source: the first of MEDIA-01 Teams, MEDIA-01 Meet, NET-01 to the first `targets.internet_icmp` entry that has `window.min_samples` results; MEDIA-01 Teams is passed over while `TEAMS_RELAY_UNREACHABLE`.
 - While any of L1–L4 is still `unknown`, the primary verdict is `CHECKING` (shown in console/web, never an exit code by itself).
 - **Call quality status** (console + web): `Measuring…` before `window.min_samples`; `Good` when MOS ≥ `thresholds.mos_good` and no quality threshold is exceeded; `Poor` when `QUALITY_POOR_VOIP` conditions hold; otherwise `Fair`.
 

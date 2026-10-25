@@ -337,6 +337,34 @@ func TestScheduler_GateSkipAndWait(t *testing.T) {
 	}
 }
 
+// A long-interval series whose gate is undecided at start must not lose a
+// whole interval: it asks again every second and runs as soon as allowed.
+func TestScheduler_WaitRetriesEverySecond(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	decided := false
+	gateFn := func() Decision {
+		mu.Lock()
+		defer mu.Unlock()
+		if decided {
+			return Decision{Action: Run}
+		}
+		return Decision{Action: Wait}
+	}
+	h := start(t, []Series{{ID: "MTU-01:gateway", Interval: 10 * time.Minute, P: okProbe(), Gate: gateFn}}, 200*time.Millisecond)
+	h.step(2*time.Second, time.Second) // asks at 0.2 s and 1.2 s: wait
+	mu.Lock()
+	decided = true
+	mu.Unlock()
+	h.step(time.Second, time.Second) // 2.2 s: runs
+	h.step(5*time.Second, time.Second)
+	h.stop()
+	got := h.sink.all()
+	if len(got) != 1 || got[0].Time.Sub(t0) != 2200*time.Millisecond {
+		t.Fatalf("samples %+v, want one run at 2.2 s", got)
+	}
+}
+
 func TestScheduler_CancelStopsAllGoroutines(t *testing.T) {
 	before := runtime.NumGoroutine()
 	var series []Series

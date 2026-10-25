@@ -1,0 +1,16 @@
+{
+  "name": "checking_startup",
+  "description": "The first two gateway checks fail: the gateway gate is still undecided (CHECKING), then opens; the two failures count as LAN loss until they leave the 60 s window",
+  "duration_s": 75,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probes": ["LAN-01", "LAN-02"], "to_s": 2, "result": "fail" } ],
+  "expect": [
+    { "at_s": 1, "verdict": "CHECKING", "exit_code": 1, "gates": { "L3": "unknown" } },
+    { "at_s": 10, "gates": { "L3": "open", "L4": "open", "L5": "open" } },
+    { "at_s": 70, "verdict": "OK" }
+  ]
+}

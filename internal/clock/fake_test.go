@@ -101,6 +101,28 @@ func TestFake_WaitTimers(t *testing.T) {
 	}
 }
 
+func TestScaled(t *testing.T) {
+	t.Parallel()
+	c := NewScaled(100)
+	start := c.Now()
+	tm := c.NewTimer(2 * time.Second) // 20 ms real
+	fired := <-tm.C()
+	if d := fired.Sub(start); d < 2*time.Second || d > 10*time.Second {
+		t.Errorf("timer fired at scaled +%v, want about 2 s", d)
+	}
+	tk := c.NewTicker(time.Second)
+	a, b := <-tk.C(), <-tk.C()
+	tk.Stop()
+	tk.Stop() // idempotent
+	if d := b.Sub(a); d < 500*time.Millisecond || d > 5*time.Second {
+		t.Errorf("tick spacing %v, want about 1 s scaled", d)
+	}
+	stopped := c.NewTimer(time.Hour)
+	if !stopped.Stop() {
+		t.Error("Stop on pending timer")
+	}
+}
+
 func TestReal(t *testing.T) {
 	t.Parallel()
 	var c Clock = Real{}

@@ -38,8 +38,8 @@ Location: `testdata/scenarios/*.json`. Format:
 ```json
 {
   "name": "gw_down",
-  "description": "Gateway stops answering ping and ARP at t=20s, recovers at t=60s",
-  "duration_s": 90,
+  "description": "Gateway stops answering ping and ARP at t=20s (ARP entry goes stale), recovers at t=60s; Wi-Fi weakens at t=45s",
+  "duration_s": 130,
   "sysinfo": {
     "adapter": { "name": "Wi-Fi", "type": "wifi", "up": true, "ipv4": "192.168.1.23/24" },
     "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
@@ -48,8 +48,8 @@ Location: `testdata/scenarios/*.json`. Format:
   },
   "default": { "result": "ok", "rtt_ms": [12, 3] },
   "rules": [
-    { "probe": "LAN-01", "from_s": 0,  "to_s": 90, "rtt_ms": [2, 0.5] },
-    { "probe": "LAN-01", "from_s": 20, "to_s": 60, "result": "fail" },
+    { "probe": "LAN-01", "rtt_ms": [2, 0.5] },
+    { "probes": ["LAN-01", "NET-01", "NET-04", "RT-01", "MTU-01"], "from_s": 20, "to_s": 60, "result": "fail" },
     { "probe": "LAN-02", "from_s": 20, "to_s": 60, "arp_state": "stale" },
     { "probe": "NET-01", "target": "8.8.8.8", "loss_pct": 5 }
   ],
@@ -58,15 +58,22 @@ Location: `testdata/scenarios/*.json`. Format:
   ],
   "expect": [
     { "at_s": 10, "verdict": "OK" },
-    { "at_s": 30, "verdict": "GW_UNREACHABLE", "skipped": ["NET-01", "DNS-01"] },
-    { "at_s": 75, "verdict": "OK", "flags_include": ["WIFI_WEAK"] }
+    { "at_s": 30, "verdict": "GW_UNREACHABLE", "exit_code": 13, "skipped": ["NET-01", "DNS-01"], "gates": { "L3": "closed", "L4": "unknown" } },
+    { "at_s": 125, "verdict": "OK", "flags_include": ["WIFI_WEAK"] }
   ]
 }
 ```
 
-- `rtt_ms: [mean, stddev]` gives deterministic pseudo-random RTTs (seeded by scenario name).
-- `loss_pct` drops a deterministic fraction of samples.
-- Rules are matched last-wins by `probe` + optional `target` + time range.
+A dead gateway also stops everything routed through it, so the scenario fails the internet probes too: a successful NET-01 alone would keep L3 open (SPEC §6 L3 evidence). The final OK is expected only once the failures have left the 60 s loss window (before that the verdict is `LAN_LOSS`).
+
+**Fields**
+- `sysinfo`: `adapter` (`name`, `type` `wifi`|`ethernet`, `up` default true, `hardware` default true, `ipv4` prefix or `""`), `gateway.ip`, `dns_servers`, `route` (`default` via the gateway, `onlink`, `none`; a down adapter or one without a usable IPv4 has no route), `wifi` (`ssid`, `ssid_hidden`, `signal_pct`, `rssi`, `band`, `band_source` `frequency`|`channel`, `channel`). The simulated primary adapter plus a loopback adapter are reported to `sysapi.SelectPrimary`.
+- `config`: a partial config over the built-in defaults (e.g. `teams.udp_ports`, `teams.relays: []`, custom targets).
+- `default` and `rules`: `probe` (a probe ID or `*`) and/or `probes` (list), optional `target` (the series target, or the last `:`-part of the series ID: `"3480"`, `"teams"`, `"8.8.8.8"`), `from_s` (inclusive, default 0), `to_s` (exclusive, default end), and any of: `result` (`ok`, `fail`, `skipped`, `captive`, `dns`), `rtt_ms: [mean, stddev]` (deterministic pseudo-random, seeded by scenario name and series), `loss_pct` (an evenly spread, deterministic fraction of samples fails), `value` (MTU-01 MTU, SYS-01 CPU %, NAT-01 `1` = symmetric), `err_class`, `detail`, `pattern` (per-second `o`/`f`/`s`/`c`, repeated from `from_s`). Matching rules apply in order, each overriding only the fields it sets. Probe defaults: ok, 12 ± 3 ms (LAN-01 1.5 ± 0.3 ms), MTU 1500, CPU 10 %.
+- `events`: `at_s` with a partial `sysinfo` merged over the current one (an adapter, address or gateway change resets L3–L5), and/or `csv_error` true/false.
+- `expect` (checked after second `at_s`): `verdict`, `exit_code`, `detail_contains`, `flags_include`, `flags_exclude`, `skipped` (probe IDs whose newest samples are all skipped), `gates` (`"L3": "closed"`), `quality_source`, `quality_status`, `adapter_changes`, `primary_adapter`.
+
+**Runs.** `sim.Run` plays a scenario deterministically on the fake clock, second by second: every series starts at 0; a series whose gate says Wait asks again the next second (like the scheduler); due series run lowest required layer first, then the gates tick, then the expectations of that second are checked. `sim.Live` (used by `run --sim` and UI tests) runs the same scenario through the real scheduler with random start offsets on any clock (`clock.Scaled` runs it faster in tests).
 - LAN-02 rules may set `arp_state` (`reachable`, `permanent`, `probe`, `delay`, `stale`, `incomplete`, `unreachable`, `busy`) instead of `result`. `gw_down` uses `stale` after the failure point, as Windows keeps the cached MAC of a dead gateway: the scenario proves a stale entry does not keep L3 open (SPEC §6). A scenario with a stale ARP entry while NET-01 still succeeds must keep L3 open and raise `GW_ICMP_BLOCKED` when LAN-01 fails.
 - `expect` entries are asserted by the scenario runner test.
 

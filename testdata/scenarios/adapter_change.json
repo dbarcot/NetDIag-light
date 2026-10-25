@@ -1,0 +1,22 @@
+{
+  "name": "adapter_change",
+  "description": "Laptop moves from Wi-Fi to an Ethernet dock at t=30s: new adapter, address, gateway and DNS",
+  "duration_s": 60,
+  "sysinfo": {
+    "adapter": { "name": "Wi-Fi", "type": "wifi", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1" },
+    "dns_servers": ["192.168.1.1"],
+    "wifi": { "ssid": "Home", "signal_pct": 30, "band": "5GHz", "channel": 36 }
+  },
+  "events": [
+    { "at_s": 30, "sysinfo": {
+      "adapter": { "name": "Ethernet", "type": "ethernet", "ipv4": "10.0.0.23/24" },
+      "gateway": { "ip": "10.0.0.1" },
+      "dns_servers": ["10.0.0.1"] } }
+  ],
+  "expect": [
+    { "at_s": 20, "verdict": "OK", "primary_adapter": "Wi-Fi", "adapter_changes": 0, "flags_include": ["WIFI_WEAK"] },
+    { "at_s": 30, "adapter_changes": 1, "gates": { "L3": "open" } },
+    { "at_s": 45, "verdict": "OK", "primary_adapter": "Ethernet", "adapter_changes": 1, "flags_exclude": ["WIFI_WEAK"] }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "onlink_route",
+  "description": "Default route without a gateway (on-link): the gateway gate follows the address, gateway checks are skipped",
+  "duration_s": 30,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "dns_servers": ["192.168.1.1"],
+    "route": "onlink"
+  },
+  "expect": [ { "at_s": 20, "verdict": "OK", "gates": { "L3": "open" }, "skipped": ["LAN-01", "LAN-02"] } ]
+}

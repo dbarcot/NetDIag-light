@@ -1,0 +1,12 @@
+{
+  "name": "mtu_issue",
+  "description": "Path MTU to the internet is only 1380 bytes",
+  "duration_s": 20,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probe": "MTU-01", "target": "1.1.1.1", "value": 1380 } ],
+  "expect": [ { "at_s": 10, "verdict": "MTU_ISSUE", "exit_code": 22, "detail_contains": "1380" } ]
+}

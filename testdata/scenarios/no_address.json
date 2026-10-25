@@ -1,0 +1,12 @@
+{
+  "name": "no_address",
+  "description": "Adapter up without any IPv4 address",
+  "duration_s": 20,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "" },
+    "dns_servers": []
+  },
+  "expect": [
+    { "at_s": 10, "verdict": "NO_ADDRESS", "exit_code": 12, "gates": { "L2": "closed" } }
+  ]
+}

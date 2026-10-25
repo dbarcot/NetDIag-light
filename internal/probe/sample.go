@@ -23,6 +23,9 @@ const (
 	ClassPacketTooBig = "packet_too_big"
 	ClassLocal        = "local_error" // a bug or OS problem on this machine, not the network
 	ClassOther        = "error"
+	ClassCaptive      = "captive"     // HTTP-01: redirect or wrong status/body (captive portal)
+	ClassDNS          = "dns"         // the probe's target name did not resolve
+	ClassUnconfirmed  = "unconfirmed" // LAN-02: only a stale/probe/delay ARP entry
 )
 
 // Sample is one immutable measurement. Probes fill the outcome fields; the

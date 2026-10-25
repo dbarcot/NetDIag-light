@@ -59,6 +59,7 @@ internal/store/       ring buffers per series, rolling-window stats
 internal/stats/       pure math: loss, jitter (mean |ΔRTT|), stdev, E-model MOS
 internal/gate/        dependency layers, hysteresis, skipped state
 internal/verdict/     verdicts and info flags from gates + stats
+internal/engine/      series catalog; ties store, gates and verdict together; snapshots
 internal/console/     mtr-style TTY renderer, plain renderer, keys (raw stdin, mode restore)
 internal/web/         HTTP server, Host check, SSE, JSON API, embedded assets
 internal/report/      report JSON model (summary + whole-run aggregates) + export

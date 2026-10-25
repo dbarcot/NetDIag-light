@@ -1,0 +1,16 @@
+{
+  "name": "ok",
+  "description": "Healthy Wi-Fi network: everything works",
+  "duration_s": 40,
+  "sysinfo": {
+    "adapter": { "name": "Wi-Fi", "type": "wifi", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"],
+    "wifi": { "ssid": "Home", "signal_pct": 78, "band": "5GHz", "channel": 36 }
+  },
+  "expect": [
+    { "at_s": 30, "verdict": "OK", "exit_code": 0, "quality_source": "MEDIA-01:teams", "quality_status": "Good",
+      "gates": { "L1": "open", "L2": "open", "L3": "open", "L4": "open", "L5": "open" },
+      "flags_exclude": ["WIFI_WEAK", "WIFI_24GHZ", "TEAMS_DISABLED"] }
+  ]
+}

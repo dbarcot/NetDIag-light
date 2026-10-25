@@ -1,0 +1,13 @@
+{
+  "name": "symmetric_nat",
+  "description": "Phone hotspot with symmetric NAT",
+  "duration_s": 20,
+  "sysinfo": {
+    "adapter": { "name": "Wi-Fi", "type": "wifi", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"],
+    "wifi": { "ssid": "Home", "signal_pct": 78, "band": "5GHz", "channel": 36 }
+  },
+  "rules": [ { "probe": "NAT-01", "value": 1 } ],
+  "expect": [ { "at_s": 10, "verdict": "OK", "flags_include": ["SYMMETRIC_NAT"] } ]
+}

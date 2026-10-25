@@ -1,0 +1,18 @@
+{
+  "name": "gw_icmp_blocked",
+  "description": "Gateway ignores ping; first its ARP entry is reachable, from t=40s only stale while internet traffic still flows",
+  "duration_s": 80,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [
+    { "probe": "LAN-01", "result": "fail" },
+    { "probe": "LAN-02", "from_s": 40, "arp_state": "stale" }
+  ],
+  "expect": [
+    { "at_s": 30, "verdict": "OK", "flags_include": ["GW_ICMP_BLOCKED"], "gates": { "L3": "open" } },
+    { "at_s": 70, "verdict": "OK", "flags_include": ["GW_ICMP_BLOCKED"], "gates": { "L3": "open" } }
+  ]
+}

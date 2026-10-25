@@ -1,0 +1,27 @@
+{
+  "name": "gw_down",
+  "description": "Gateway stops answering ping and ARP at t=20s (ARP entry goes stale), recovers at t=60s; Wi-Fi weakens at t=45s",
+  "duration_s": 130,
+  "sysinfo": {
+    "adapter": { "name": "Wi-Fi", "type": "wifi", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"],
+    "wifi": { "ssid": "Home", "signal_pct": 78, "band": "5GHz", "channel": 36 }
+  },
+  "default": { "result": "ok", "rtt_ms": [12, 3] },
+  "rules": [
+    { "probe": "LAN-01", "rtt_ms": [2, 0.5] },
+    { "probes": ["LAN-01", "NET-01", "NET-04", "RT-01", "MTU-01"], "from_s": 20, "to_s": 60, "result": "fail" },
+    { "probe": "LAN-02", "from_s": 20, "to_s": 60, "arp_state": "stale" },
+    { "probe": "NET-01", "target": "8.8.8.8", "loss_pct": 5 }
+  ],
+  "events": [
+    { "at_s": 45, "sysinfo": { "wifi": { "signal_pct": 30 } } }
+  ],
+  "expect": [
+    { "at_s": 10, "verdict": "OK" },
+    { "at_s": 30, "verdict": "GW_UNREACHABLE", "exit_code": 13, "skipped": ["NET-01", "DNS-01"], "gates": { "L3": "closed", "L4": "unknown" } },
+    { "at_s": 75, "gates": { "L3": "open", "L4": "open", "L5": "open" }, "flags_include": ["WIFI_WEAK"] },
+    { "at_s": 125, "verdict": "OK", "flags_include": ["WIFI_WEAK"] }
+  ]
+}

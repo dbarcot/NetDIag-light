@@ -1,0 +1,19 @@
+{
+  "name": "teams_relay_unreachable",
+  "description": "The Teams test relay stops answering (UDP and TCP) while Meet and other STUN work; from t=40s its name no longer resolves",
+  "duration_s": 80,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [
+    { "probes": ["TEAMS-01", "TEAMS-02", "SRC-01"], "result": "fail" },
+    { "probe": "MEDIA-01", "target": "teams", "result": "fail" },
+    { "probes": ["TEAMS-01", "TEAMS-02"], "from_s": 40, "result": "dns" }
+  ],
+  "expect": [
+    { "at_s": 30, "verdict": "OK", "flags_include": ["TEAMS_RELAY_UNREACHABLE"], "flags_exclude": ["TEAMS_SRC_PORTS_BLOCKED"], "quality_source": "MEDIA-01:meet" },
+    { "at_s": 70, "verdict": "OK", "flags_include": ["TEAMS_RELAY_UNREACHABLE"] }
+  ]
+}

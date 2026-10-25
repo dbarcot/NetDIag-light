@@ -1,0 +1,15 @@
+{
+  "name": "teams_udp_blocked",
+  "description": "UDP to the Teams relay is blocked; Teams falls back to TCP 443",
+  "duration_s": 40,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [
+    { "probes": ["TEAMS-01", "SRC-01"], "result": "fail" },
+    { "probe": "MEDIA-01", "target": "teams", "result": "fail" }
+  ],
+  "expect": [ { "at_s": 30, "verdict": "TEAMS_UDP_BLOCKED", "exit_code": 19, "flags_include": ["TEAMS_SRC_PORTS_BLOCKED"] } ]
+}

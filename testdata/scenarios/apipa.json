@@ -1,0 +1,12 @@
+{
+  "name": "apipa",
+  "description": "No DHCP answer: only a 169.254.x.x address",
+  "duration_s": 20,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "169.254.12.7/16" },
+    "dns_servers": []
+  },
+  "expect": [
+    { "at_s": 10, "verdict": "APIPA", "exit_code": 11, "gates": { "L1": "open", "L2": "closed" }, "skipped": ["LAN-01"] }
+  ]
+}

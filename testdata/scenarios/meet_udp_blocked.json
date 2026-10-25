@@ -1,0 +1,12 @@
+{
+  "name": "meet_udp_blocked",
+  "description": "UDP to Google STUN is blocked; other UDP and TCP work",
+  "duration_s": 40,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probes": ["RT-01", "MEET-01", "MEDIA-01"], "target": "stun.l.google.com:19302", "result": "fail" } ],
+  "expect": [ { "at_s": 30, "verdict": "MEET_UDP_BLOCKED", "exit_code": 21 } ]
+}

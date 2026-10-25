@@ -1,0 +1,16 @@
+{
+  "name": "cpu_high",
+  "description": "CPU load at 95 % between t=20s and t=60s",
+  "duration_s": 80,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probe": "SYS-01", "from_s": 20, "to_s": 60, "value": 95 } ],
+  "expect": [
+    { "at_s": 10, "verdict": "OK", "flags_exclude": ["CPU_HIGH"] },
+    { "at_s": 30, "verdict": "OK", "flags_include": ["CPU_HIGH"] },
+    { "at_s": 75, "verdict": "OK", "flags_exclude": ["CPU_HIGH"] }
+  ]
+}

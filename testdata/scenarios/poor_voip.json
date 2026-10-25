@@ -1,0 +1,12 @@
+{
+  "name": "poor_voip",
+  "description": "Media path to the Teams relay has 180 ms RTT",
+  "duration_s": 40,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probe": "MEDIA-01", "target": "teams", "rtt_ms": [180, 20] } ],
+  "expect": [ { "at_s": 30, "verdict": "QUALITY_POOR_VOIP", "exit_code": 25, "quality_source": "MEDIA-01:teams", "quality_status": "Poor" } ]
+}

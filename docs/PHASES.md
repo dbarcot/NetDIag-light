@@ -81,8 +81,8 @@ Rules (from `CLAUDE.md`): finish phases in order; tests are written during the p
 - Scenario runner test: each file in `testdata/scenarios/` runs to completion under fake clock and asserts its own `expect` block.
 
 **Acceptance**
-- [ ] One scenario per verdict and per flag, all green
-- [ ] `netdiag run --sim testdata/scenarios/gw_down.json` runs (plain output is fine at this phase)
+- [x] One scenario per verdict and per flag, all green (`TestScenarios_Coverage` enforces it)
+- [x] `netdiag run --sim testdata/scenarios/gw_down.json` runs (plain output is fine at this phase)
 
 ---
 

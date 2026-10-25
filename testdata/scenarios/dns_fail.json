@@ -1,0 +1,12 @@
+{
+  "name": "dns_fail",
+  "description": "DNS (UDP 53) is blocked everywhere from t=10s",
+  "duration_s": 40,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probes": ["DNS-01", "DNS-02"], "from_s": 10, "result": "fail" } ],
+  "expect": [ { "at_s": 35, "verdict": "DNS_FAIL", "exit_code": 17 } ]
+}

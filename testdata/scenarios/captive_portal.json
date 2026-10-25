@@ -1,0 +1,13 @@
+{
+  "name": "captive_portal",
+  "description": "Hotel Wi-Fi: HTTP checks are redirected to a login page",
+  "duration_s": 30,
+  "sysinfo": {
+    "adapter": { "name": "Wi-Fi", "type": "wifi", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"],
+    "wifi": { "ssid": "Home", "signal_pct": 78, "band": "5GHz", "channel": 36 }
+  },
+  "rules": [ { "probe": "HTTP-01", "result": "captive" } ],
+  "expect": [ { "at_s": 10, "verdict": "CAPTIVE_PORTAL", "exit_code": 14 } ]
+}

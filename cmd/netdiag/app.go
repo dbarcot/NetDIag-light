@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"netdiag/internal/clock"
 	"netdiag/internal/config"
+	"netdiag/internal/sim"
 	"netdiag/internal/sysapi"
 )
 
@@ -25,6 +28,8 @@ const minHeadlessDuration = 10 * time.Second
 
 // app holds everything main injects, so commands are testable.
 type app struct {
+	ctx            context.Context // cancelled by Ctrl+C
+	clock          clock.Clock
 	stdin          io.Reader
 	stdout, stderr io.Writer
 	console        sysapi.Console
@@ -120,6 +125,7 @@ type runOptions struct {
 	headless   bool
 	duration   time.Duration
 	jsonPath   string
+	simPath    string // hidden developer flag (SPEC §3)
 }
 
 func (a *app) parseRun(args []string) (runOptions, error) {
@@ -133,6 +139,7 @@ func (a *app) parseRun(args []string) (runOptions, error) {
 	fs.BoolVar(&o.headless, "headless", false, "")
 	fs.DurationVar(&o.duration, "duration", 0, "")
 	fs.StringVar(&o.jsonPath, "json", "", "")
+	fs.StringVar(&o.simPath, "sim", "", "")
 	if err := fs.Parse(args); err != nil {
 		return o, err
 	}
@@ -155,8 +162,32 @@ func (a *app) parseRun(args []string) (runOptions, error) {
 		return o, fmt.Errorf("run: --duration must be at least %s", minHeadlessDuration)
 	case !o.headless && (set["duration"] || set["json"]):
 		return o, errors.New("run: --duration and --json require --headless")
+	case o.simPath != "" && o.headless:
+		return o, errors.New("run: --sim with --headless is not implemented yet")
 	}
 	return o, nil
+}
+
+// runSim plays a scenario file through the real engine with the plain
+// output (SPEC §3 hidden --sim flag). The scenario's config block over the
+// built-in defaults is used; --config is not read.
+func (a *app) runSim(path string) (int, bool) {
+	data, err := a.fs.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "netdiag: --sim: %v\n", err)
+		return exitRuntime, false
+	}
+	sc, err := sim.Parse(data)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "netdiag: --sim: %v\n", err)
+		return exitRuntime, false
+	}
+	fmt.Fprintf(a.stdout, "netdiag %s\n", a.version)
+	if _, err := sim.Live(a.ctx, sc, a.clock, a.stdout); err != nil {
+		fmt.Fprintf(a.stderr, "netdiag: --sim: %v\n", err)
+		return exitRuntime, false
+	}
+	return exitOK, false
 }
 
 func (a *app) run(args []string) (int, bool) {
@@ -171,6 +202,9 @@ func (a *app) run(args []string) (int, bool) {
 			msg = "run: " + msg
 		}
 		return a.usageError("%s", msg)
+	}
+	if o.simPath != "" {
+		return a.runSim(o.simPath)
 	}
 
 	cfg, source, err := config.Load(a.fs, o.configPath, a.paths)

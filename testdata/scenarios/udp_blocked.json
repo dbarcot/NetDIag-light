@@ -1,0 +1,12 @@
+{
+  "name": "udp_blocked",
+  "description": "A firewall blocks outgoing UDP: every STUN check fails, TCP works",
+  "duration_s": 40,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probes": ["RT-01", "NAT-01", "MEET-01", "TEAMS-01", "MEDIA-01", "SRC-01"], "result": "fail" } ],
+  "expect": [ { "at_s": 30, "verdict": "UDP_BLOCKED", "exit_code": 18 } ]
+}
