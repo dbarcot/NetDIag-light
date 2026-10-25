@@ -5,6 +5,7 @@ package sysapi
 import (
 	"context"
 	"fmt"
+	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -68,12 +69,22 @@ func (c *WinConsole) OutMode() (uint32, error) { return getMode(c.out) }
 func (c *WinConsole) SetInMode(mode uint32) error  { return windows.SetConsoleMode(c.in, mode) }
 func (c *WinConsole) SetOutMode(mode uint32) error { return windows.SetConsoleMode(c.out, mode) }
 
-func (c *WinConsole) Width() (int, error) {
+func (c *WinConsole) window() (windows.SmallRect, error) {
 	var info windows.ConsoleScreenBufferInfo
 	if err := windows.GetConsoleScreenBufferInfo(c.out, &info); err != nil {
-		return 0, fmt.Errorf("%w: %w", ErrNotConsole, err)
+		return windows.SmallRect{}, fmt.Errorf("%w: %w", ErrNotConsole, err)
 	}
-	return int(info.Window.Right-info.Window.Left) + 1, nil
+	return info.Window, nil
+}
+
+func (c *WinConsole) Width() (int, error) {
+	w, err := c.window()
+	return int(w.Right-w.Left) + 1, err
+}
+
+func (c *WinConsole) Height() (int, error) {
+	w, err := c.window()
+	return int(w.Bottom-w.Top) + 1, err
 }
 
 // inputRecord is INPUT_RECORD with the KEY_EVENT_RECORD union member
@@ -116,4 +127,29 @@ func (c *WinConsole) ReadKey(ctx context.Context) (Key, error) {
 			return Key{Rune: rune(rec.UnicodeChar), VirtualKey: rec.VirtualKeyCode, Control: rec.ControlKeyState}, nil
 		}
 	}
+}
+
+// writeChunk bounds one WriteConsoleW call (UTF-16 units).
+const writeChunk = 8192
+
+func (c *WinConsole) Write(p []byte) (int, error) {
+	if _, err := getMode(c.out); err != nil {
+		return 0, err
+	}
+	u := utf16.Encode([]rune(string(p)))
+	for len(u) > 0 {
+		n := min(len(u), writeChunk)
+		if n < len(u) && utf16.IsSurrogate(rune(u[n-1])) {
+			n-- // keep a surrogate pair in one call
+		}
+		var written uint32
+		if err := windows.WriteConsole(c.out, &u[0], uint32(n), &written, nil); err != nil {
+			return 0, fmt.Errorf("WriteConsoleW: %w", err)
+		}
+		if written == 0 {
+			return 0, fmt.Errorf("WriteConsoleW: nothing written")
+		}
+		u = u[written:]
+	}
+	return len(p), nil
 }

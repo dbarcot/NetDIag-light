@@ -219,6 +219,23 @@ func (sc *Scenario) CSVErrorAt(t int) bool {
 // SystemAt returns the simulated OS state at second t: the base sysinfo
 // with every event up to t merged over it.
 func (sc *Scenario) SystemAt(t int) (engine.System, error) {
+	si, err := sc.sysinfoAt(t)
+	if err != nil {
+		return engine.System{}, err
+	}
+	return si.system()
+}
+
+// gatewayMACAt is the scenario's gateway MAC at second t ("" if unset).
+func (sc *Scenario) gatewayMACAt(t int) string {
+	si, err := sc.sysinfoAt(t)
+	if err != nil {
+		return ""
+	}
+	return si.Gateway.MAC
+}
+
+func (sc *Scenario) sysinfoAt(t int) (sysinfo, error) {
 	merged := deepCopy(sc.base)
 	for _, e := range sc.Events {
 		if e.AtS > t || len(e.Sysinfo) == 0 {
@@ -226,16 +243,16 @@ func (sc *Scenario) SystemAt(t int) (engine.System, error) {
 		}
 		var overlay map[string]any
 		if err := json.Unmarshal(e.Sysinfo, &overlay); err != nil {
-			return engine.System{}, fmt.Errorf("event at %d s: %w", e.AtS, err)
+			return sysinfo{}, fmt.Errorf("event at %d s: %w", e.AtS, err)
 		}
 		mergeInto(merged, overlay)
 	}
 	raw, _ := json.Marshal(merged)
 	var si sysinfo
 	if err := strictDecode(raw, &si); err != nil {
-		return engine.System{}, fmt.Errorf("sysinfo at %d s: %w", t, err)
+		return sysinfo{}, fmt.Errorf("sysinfo at %d s: %w", t, err)
 	}
-	return si.system()
+	return si, nil
 }
 
 const simAdapterIndex = 10

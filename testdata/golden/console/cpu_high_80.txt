@@ -1,0 +1,35 @@
+netdiag 1.2.3  12:00:30  Config: simulation cpu_high  Web UI: http://127.0.0.1:…
+Adapter: Ethernet  IP: 192.168.1.23  Gateway: 192.168.1.1 (aa:bb:cc:dd:ee:ff)  …
+Public IP: -  CPU: Heavy 95%
+Verdict: OK  Flags: CPU_HIGH
+Call quality: Good  MOS 4.40  RTT 11.8 ms  jitter 2.7 ms  loss 0.0%  [MEDIA-01 …
+Teams: UDP 3478 ok, TCP 443 ok, MOS 4.40   Meet: ok, MOS 4.39
+
+Name     Host              Loss%   Snt   Last    Avg   Best   Wrst  StDev Jitter
+LAN-01   192.168.1.1        0.0%    31    0.9    1.5    0.9    2.2    0.4    0.4
+LAN-02   192.168.1.1        0.0%     7   13.6   11.1    7.1   14.3    2.4    3.6
+DNS-01   192.168.1.1        0.0%     6   10.8   12.4    6.8   17.8    3.5    4.7
+HTTP-01  http://connecti…   0.0%     2   13.5   10.0    6.6   13.5    3.4      -
+HTTP-01  http://www.msft…   0.0%     2   11.0   12.1   11.0   13.2    1.1      -
+MTU-01   192.168.1.1        0.0%     1 path MTU 1500                            
+NET-01   1.1.1.1            0.0%    30   12.0   11.8    6.3   17.3    3.0    3.4
+NET-01   8.8.8.8            0.0%    30    9.2   11.2    6.3   16.3    2.9    3.1
+NET-04   1.1.1.1:443        0.0%    30   10.0   12.5    5.6   17.9    2.8    3.0
+RT-01    stun.cloudflare…   0.0%     6   12.7   13.1   11.6   15.5    1.2    1.6
+RT-01    stun.l.google.c…   0.0%     6   14.7   13.6    9.4   16.9    2.3    3.4
+DNS-02   1.1.1.1            0.0%     6   16.3   12.4    9.0   16.3    2.3    3.0
+DNS-02   8.8.8.8            0.0%     6    9.5   12.8    9.5   14.6    1.8    1.9
+MTU-01   1.1.1.1            0.0%     1 path MTU 1500                            
+NAT-01   stun               0.0%     1   14.9   14.9   14.9   14.9    0.0      -
+MEDIA-01 stun.l.google.c…   0.0%    29   11.6   11.9    3.8   16.0    3.1    4.4
+MEDIA-01 worldaz.tr.team…   0.0%    29   13.5   11.8    7.2   19.3    2.9    2.7
+MEET-01  stun.l.google.c…   0.0%     3   11.2   10.6    8.6   12.0    1.4    3.0
+SRC-01   worldaz.tr.team…   0.0%     1    7.5    7.5    7.5    7.5    0.0      -
+SVC-01   meet.google.com    0.0%     1   14.8   14.8   14.8   14.8    0.0      -
+SVC-01   outlook.office3…   0.0%     1   14.0   14.0   14.0   14.0    0.0      -
+SVC-01   teams.microsoft…   0.0%     1    8.5    8.5    8.5    8.5    0.0      -
+SVC-01   zoom.us            0.0%     1   13.8   13.8   13.8   13.8    0.0      -
+TEAMS-01 worldaz.tr.team…   0.0%     3   13.6   11.9    5.7   16.5    4.6    9.3
+TEAMS-02 worldaz.tr.team…   0.0%     3   17.0   12.4    9.6   17.0    3.3    4.3
+
+q quit  r reset counters

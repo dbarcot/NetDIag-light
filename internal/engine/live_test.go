@@ -14,6 +14,7 @@ import (
 	"netdiag/internal/config"
 	"netdiag/internal/probe"
 	"netdiag/internal/sysapi"
+	"netdiag/internal/verdict"
 )
 
 func TestBuildProbe_TypesAndTargets(t *testing.T) {
@@ -276,6 +277,22 @@ func TestRunLive_AdapterChangeRebuildsSeries(t *testing.T) {
 	}
 	if snap.AdapterChanges != 1 || len(snap.AdapterEvents) != 1 {
 		t.Errorf("changes %d, events %v", snap.AdapterChanges, snap.AdapterEvents)
+	}
+}
+
+// The console passes its own engine and no plain writer.
+func TestRunLive_UsesGivenEngine(t *testing.T) {
+	t.Parallel()
+	f := newLiveFixture(t)
+	f.opts.Out = nil
+	f.opts.Engine = New(f.opts.Cfg, f.opts.Clock)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { _, err := RunLive(ctx, f.opts); done <- err }()
+	waitFor(t, "OK on the given engine", func() bool { return f.opts.Engine.Snapshot().Result.Verdict == verdict.OK })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

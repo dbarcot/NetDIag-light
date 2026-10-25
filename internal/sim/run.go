@@ -45,6 +45,23 @@ func intervalSeconds(sp engine.Spec) int { return max(int(sp.Interval/time.Secon
 // second: every series due at second t runs (all series start at 0), then
 // the gates tick, then the expectations for t are checked.
 func Run(sc *Scenario) ([]Outcome, error) {
+	var out []Outcome
+	ex := 0
+	err := Play(sc, func(t int, eng *engine.Engine) bool {
+		for ; ex < len(sc.Expect) && sc.Expect[ex].AtS == t; ex++ {
+			snap := eng.Snapshot()
+			out = append(out, Outcome{Expect: sc.Expect[ex], Snapshot: snap, Errors: check(sc.Expect[ex], snap, eng)})
+		}
+		return true
+	})
+	return out, err
+}
+
+// Play runs a scenario deterministically on a fake clock (as Run) and
+// calls after(t, eng) at the end of every second t, after the gate tick;
+// returning false stops the run. Console golden tests take their
+// snapshots this way.
+func Play(sc *Scenario, after func(t int, eng *engine.Engine) bool) error {
 	cfg := sc.Config()
 	c := clock.NewFake(Epoch)
 	eng := engine.New(cfg, c)
@@ -52,14 +69,13 @@ func Run(sc *Scenario) ([]Outcome, error) {
 
 	sys, err := sc.SystemAt(0)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	eng.SetSystem(sys)
 	specs := orderSpecs(engine.BuildSeries(cfg, eng.Primary()))
 	eng.SetSeries(specs)
 
-	var out []Outcome
-	ev, ex := 0, 0
+	ev := 0
 	due := map[string]int{} // next second each series runs; same rules as sched
 	for t := 0; t <= sc.DurationS; t++ {
 		if t > 0 {
@@ -72,7 +88,7 @@ func Run(sc *Scenario) ([]Outcome, error) {
 		if changed {
 			sys, err := sc.SystemAt(t)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			eng.SetSystem(sys)
 			specs = orderSpecs(engine.BuildSeries(cfg, eng.Primary()))
@@ -100,12 +116,11 @@ func Run(sc *Scenario) ([]Outcome, error) {
 			eng.OnSample(s)
 		}
 		eng.Tick()
-		for ; ex < len(sc.Expect) && sc.Expect[ex].AtS == t; ex++ {
-			snap := eng.Snapshot()
-			out = append(out, Outcome{Expect: sc.Expect[ex], Snapshot: snap, Errors: check(sc.Expect[ex], snap, eng)})
+		if !after(t, eng) {
+			return nil
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // check compares a snapshot with an expectation.

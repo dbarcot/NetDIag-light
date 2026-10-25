@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 
@@ -14,10 +13,10 @@ import (
 	"netdiag/internal/sysapi"
 )
 
-// realLive runs the real probes against the real network until ctx ends.
-// With logPath set, warnings and probe panics go to that file (slog); the
-// console belongs to the renderer.
-func realLive(ctx context.Context, cfg *config.Config, out io.Writer, logPath string) error {
+// realLive runs the real probes against the real network on eng until ctx
+// ends. With logPath set, warnings and probe panics go to that file
+// (slog); the console belongs to the renderer.
+func realLive(ctx context.Context, cfg *config.Config, eng *engine.Engine, logPath string) error {
 	var logger *slog.Logger
 	if logPath != "" {
 		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
@@ -30,7 +29,7 @@ func realLive(ctx context.Context, cfg *config.Config, out io.Writer, logPath st
 	sys := sysapi.NewSystem(logger)
 	c := clock.Real{}
 	_, err := engine.RunLive(ctx, engine.LiveOptions{
-		Cfg: cfg, Clock: c, Sys: sys, Out: out, Logger: logger,
+		Cfg: cfg, Clock: c, Sys: sys, Logger: logger, Engine: eng,
 		Deps: engine.Deps{
 			Clock:     c,
 			ICMP:      probe.WinICMP{Logger: logger},

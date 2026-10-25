@@ -1,6 +1,7 @@
 package sysapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -25,8 +26,10 @@ type FakeConsole struct {
 	FailSetIn  bool
 	FailSetOut bool
 	Cols       int
+	Rows       int // Height; 0 = no console height (error)
 	Changes    []ModeChange
 	Keys       chan Key // ReadKey reads from here
+	output     bytes.Buffer
 }
 
 func (c *FakeConsole) ProcessCount() (int, error) { return c.Count, c.Err }
@@ -83,6 +86,29 @@ func (c *FakeConsole) Width() (int, error) {
 		return 0, ErrNotConsole
 	}
 	return c.Cols, nil
+}
+
+func (c *FakeConsole) Height() (int, error) {
+	if c.NoOut || c.Rows == 0 {
+		return 0, ErrNotConsole
+	}
+	return c.Rows, nil
+}
+
+func (c *FakeConsole) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.NoOut {
+		return 0, ErrNotConsole
+	}
+	return c.output.Write(p)
+}
+
+// Output returns everything written with Write.
+func (c *FakeConsole) Output() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.output.String()
 }
 
 func (c *FakeConsole) ReadKey(ctx context.Context) (Key, error) {

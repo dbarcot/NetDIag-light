@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"unicode/utf16"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -22,8 +24,12 @@ type freshConsoleResult struct {
 	RawIn, RawOut   uint32
 	RestIn, RestOut uint32
 	VT, Keys        bool
+	Written         string // read back from the screen buffer after Write
 	Err             string
 }
+
+// consoleWriteProbe has characters outside every OEM code page.
+const consoleWriteProbe = "spark ▁▄█ × …"
 
 // TestWinConsole_FreshConsole re-runs itself in a new hidden console, as a
 // double-click from Explorer would, and checks there: the process owns the
@@ -68,6 +74,9 @@ func TestWinConsole_FreshConsole(t *testing.T) {
 	if r.RestIn != r.OrigIn || r.RestOut != r.OrigOut {
 		t.Errorf("not restored: in %#x→%#x, out %#x→%#x", r.OrigIn, r.RestIn, r.OrigOut, r.RestOut)
 	}
+	if r.Written != consoleWriteProbe {
+		t.Errorf("Write put %q on the screen, want %q (WriteConsoleW, SPEC §9 encoding)", r.Written, consoleWriteProbe)
+	}
 }
 
 func writeFreshConsoleResult(path string) {
@@ -94,6 +103,28 @@ func writeFreshConsoleResult(path string) {
 	}
 	r.RestIn, _ = c.InMode()
 	r.RestOut, _ = c.OutMode()
+	r.Written = writeAndReadBack(c, consoleWriteProbe)
+}
+
+// writeAndReadBack writes s at the cursor with Console.Write and reads the
+// characters back from the screen buffer.
+func writeAndReadBack(c *WinConsole, s string) string {
+	var info windows.ConsoleScreenBufferInfo
+	if err := windows.GetConsoleScreenBufferInfo(c.out, &info); err != nil {
+		return "info: " + err.Error()
+	}
+	if _, err := c.Write([]byte(s)); err != nil {
+		return "write: " + err.Error()
+	}
+	n := len(utf16.Encode([]rune(s)))
+	buf := make([]uint16, n)
+	var read uint32
+	proc := windows.NewLazySystemDLL("kernel32.dll").NewProc("ReadConsoleOutputCharacterW")
+	pos := uintptr(uint32(uint16(info.CursorPosition.X)) | uint32(uint16(info.CursorPosition.Y))<<16)
+	if r, _, err := proc.Call(uintptr(c.out), uintptr(unsafe.Pointer(&buf[0])), uintptr(n), pos, uintptr(unsafe.Pointer(&read))); r == 0 {
+		return "read: " + err.Error()
+	}
+	return string(utf16.Decode(buf[:read]))
 }
 
 func TestWinConsole_ProcessCount(t *testing.T) {
@@ -123,5 +154,8 @@ func TestWinConsole_ModesAndWidth(t *testing.T) {
 	}
 	if w, err := c.Width(); err == nil && w <= 0 {
 		t.Errorf("width = %d", w)
+	}
+	if h, err := c.Height(); err == nil && h <= 0 {
+		t.Errorf("height = %d", h)
 	}
 }

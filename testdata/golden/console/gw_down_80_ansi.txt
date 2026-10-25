@@ -1,0 +1,35 @@
+netdiag 1.2.3  12:00:30  Config: simulation gw_down  Web UI: http://127.0.0.1:4…
+Adapter: Wi-Fi  IP: 192.168.1.23  Gateway: 192.168.1.1 (aa:bb:cc:dd:ee:ff)  DNS…
+Public IP: -  Wi-Fi: Home 78% 5 GHz  CPU: Light 10%
+Verdict: [1;31mGW_UNREACHABLE (gateway down)[0m  Flags: -
+Call quality: [32mGood[0m  MOS 4.40  RTT 11.5 ms  jitter 3.2 ms  loss 0.0%  [MEDIA-01 …
+Teams: UDP 3478 ok, TCP 443 ok, MOS 4.40   Meet: ok, MOS 4.39
+
+[1mName     Host              Loss%   Snt   Last    Avg   Best   Wrst  StDev Jitter[0m
+LAN-01   192.168.1.1       35.5%    31    1.1    2.1    1.0    3.5    0.7    0.9
+LAN-02   192.168.1.1       42.9%     7   10.3   12.4   10.1   14.9    2.2    3.1
+[90mDNS-01   192.168.1.1        0.0%     5 skipped: gateway down                    [0m
+HTTP-01  http://connecti…   0.0%     2   10.3   10.6   10.3   10.9    0.3      -
+HTTP-01  http://www.msft…   0.0%     2   10.1    9.8    9.5   10.1    0.3      -
+MTU-01   192.168.1.1        0.0%     1 path MTU 1500                            
+[90mNET-01   1.1.1.1           17.4%    23 skipped: gateway down                    [0m
+[90mNET-01   8.8.8.8           17.4%    23 skipped: gateway down                    [0m
+NET-04   1.1.1.1:443       17.4%    23   12.7   10.4    6.0   17.8    2.7    3.1
+[90mRT-01    stun.cloudflare…  20.0%     5 skipped: gateway down                    [0m
+[90mRT-01    stun.l.google.c…  20.0%     5 skipped: gateway down                    [0m
+[90mDNS-02   1.1.1.1            0.0%     5 skipped: gateway down                    [0m
+[90mDNS-02   8.8.8.8            0.0%     5 skipped: gateway down                    [0m
+MTU-01   1.1.1.1            0.0%     1 path MTU 1500                            
+NAT-01   stun               0.0%     1    6.8    6.8    6.8    6.8    0.0      -
+[90mMEDIA-01 stun.l.google.c…   0.0%    22 skipped: gateway down                    [0m
+[90mMEDIA-01 worldaz.tr.team…   0.0%    22 skipped: gateway down                    [0m
+MEET-01  stun.l.google.c…   0.0%     3   11.0   12.3    9.7   16.3    2.9    6.0
+SRC-01   worldaz.tr.team…   0.0%     1    8.8    8.8    8.8    8.8    0.0      -
+SVC-01   meet.google.com    0.0%     1    8.9    8.9    8.9    8.9    0.0      -
+SVC-01   outlook.office3…   0.0%     1    7.2    7.2    7.2    7.2    0.0      -
+SVC-01   teams.microsoft…   0.0%     1   13.9   13.9   13.9   13.9    0.0      -
+SVC-01   zoom.us            0.0%     1   14.1   14.1   14.1   14.1    0.0      -
+TEAMS-01 worldaz.tr.team…   0.0%     3    8.8   10.4    8.8   13.5    2.2    4.7
+TEAMS-02 worldaz.tr.team…   0.0%     3   11.9   12.5   10.9   14.8    1.6    2.4
+
+[90mq quit  r reset counters[0m

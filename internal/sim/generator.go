@@ -163,6 +163,11 @@ func (g *Generator) Sample(sp engine.Spec, t int) probe.Sample {
 		if e.value != nil {
 			s.Value = *e.value
 		}
+		if sp.Probe == "LAN-02" && s.Detail == "" {
+			if mac := g.sc.gatewayMACAt(t); mac != "" {
+				s.Detail = mac + " (reachable)" // as probe.ARPProbe reports it
+			}
+		}
 		if sp.Probe == "MTU-01" && s.Value < probe.MaxMTU {
 			s.Bound = e.bound
 			if s.Bound == "" {

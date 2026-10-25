@@ -13,6 +13,8 @@ import (
 
 	"netdiag/internal/clock"
 	"netdiag/internal/config"
+	"netdiag/internal/console"
+	"netdiag/internal/engine"
 	"netdiag/internal/sim"
 	"netdiag/internal/sysapi"
 )
@@ -35,11 +37,12 @@ type app struct {
 	console        sysapi.Console
 	fs             config.FS
 	paths          config.Paths
+	lookupEnv      func(string) (string, bool) // os.LookupEnv (NO_COLOR)
 	version        string
 	commit         string
-	// live runs the real probes until ctx ends, printing the plain output
-	// to out (real: realLive; tests swap in a stub).
-	live func(ctx context.Context, cfg *config.Config, out io.Writer, logPath string) error
+	// live runs the real probes on eng until ctx ends (real: realLive;
+	// tests swap in a stub). The console renders eng meanwhile.
+	live func(ctx context.Context, cfg *config.Config, eng *engine.Engine, logPath string) error
 }
 
 // main runs one command and returns the process exit code. After help or
@@ -185,12 +188,31 @@ func (a *app) runSim(path string) (int, bool) {
 		fmt.Fprintf(a.stderr, "netdiag: --sim: %v\n", err)
 		return exitRuntime, false
 	}
-	fmt.Fprintf(a.stdout, "netdiag %s\n", a.version)
-	if _, err := sim.Live(a.ctx, sc, a.clock, a.stdout); err != nil {
+	fmt.Fprintf(a.stdout, "netdiag %s\nsimulation %q (%d s): %s\n", a.version, sc.Name, sc.DurationS, sc.Description)
+	eng := engine.New(sc.Config(), a.clock)
+	err = a.showConsole(sc.Config(), "simulation "+sc.Name, eng, func(ctx context.Context) error {
+		_, err := sim.LiveOn(ctx, sc, eng, a.clock, nil)
+		return err
+	})
+	if err != nil {
 		fmt.Fprintf(a.stderr, "netdiag: --sim: %v\n", err)
 		return exitRuntime, false
 	}
 	return exitOK, false
+}
+
+// showConsole runs work under the console view (SPEC §9) until it ends,
+// Ctrl+C or q.
+func (a *app) showConsole(cfg *config.Config, source string, eng *engine.Engine, work func(ctx context.Context) error) error {
+	lookup := a.lookupEnv
+	if lookup == nil {
+		lookup = func(string) (string, bool) { return "", false }
+	}
+	return console.Run(a.ctx, console.Options{
+		Console: a.console, Stdout: a.stdout, Clock: a.clock, LookupEnv: lookup, Config: cfg,
+		// the web UI comes with Phase 6; until then the header says "off"
+		Meta: console.Meta{Version: a.version, ConfigSource: source},
+	}, eng, work)
 }
 
 func (a *app) run(args []string) (int, bool) {
@@ -228,7 +250,11 @@ func (a *app) run(args []string) (int, bool) {
 		return exitOK, false
 	}
 	fmt.Fprintln(a.stdout, "Press Ctrl+C to stop.")
-	if err := a.live(a.ctx, cfg, a.stdout, o.logPath); err != nil {
+	eng := engine.New(cfg, a.clock)
+	err = a.showConsole(cfg, source, eng, func(ctx context.Context) error {
+		return a.live(ctx, cfg, eng, o.logPath)
+	})
+	if err != nil {
 		fmt.Fprintf(a.stderr, "netdiag: %v\n", err)
 		return exitRuntime, false
 	}

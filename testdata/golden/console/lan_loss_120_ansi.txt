@@ -1,0 +1,35 @@
+netdiag 1.2.3  12:00:40  Config: simulation lan_loss  Web UI: http://127.0.0.1:48765/
+Adapter: Ethernet  IP: 192.168.1.23  Gateway: 192.168.1.1 (aa:bb:cc:dd:ee:ff)  DNS: 192.168.1.1
+Public IP: -  CPU: Light 10%
+Verdict: [1;31mLAN_LOSS[0m  Flags: -
+Call quality: [32mGood[0m  MOS 4.39  RTT 12.8 ms  jitter 3.8 ms  loss 0.0%  [MEDIA-01 Teams]
+Teams: UDP 3478 ok, TCP 443 ok, MOS 4.39   Meet: ok, MOS 4.39
+
+[1mName     Host                                      Loss%   Snt   Last    Avg   Best   Wrst  StDev Jitter[0m
+LAN-01   192.168.1.1                                9.8%    41    1.1    1.6    0.8    2.1    0.3    0.3
+LAN-02   192.168.1.1                                0.0%     9   12.4   12.1    8.0   15.6    2.1    2.3
+DNS-01   192.168.1.1                                0.0%     8   13.5   12.6    6.1   16.5    3.6    6.0
+HTTP-01  http://connectivitycheck.gstatic.com/ge…   0.0%     3   11.2   13.6   11.2   16.4    2.1    4.2
+HTTP-01  http://www.msftconnecttest.com/connectt…   0.0%     3   14.6   12.6   10.7   14.6    1.6    2.0
+MTU-01   192.168.1.1                                0.0%     1 path MTU 1500                            
+NET-01   1.1.1.1                                   10.0%    40   10.4   11.1    4.8   16.9    2.9    3.8
+NET-01   8.8.8.8                                   10.0%    40   14.9   12.0    6.9   18.2    3.1    3.2
+NET-04   1.1.1.1:443                                0.0%    40   12.4   11.6    3.7   16.0    3.0    3.5
+RT-01    stun.cloudflare.com:3478                   0.0%     8   16.3   11.0    8.0   16.3    2.4    2.4
+RT-01    stun.l.google.com:19302                    0.0%     8   14.6   11.8    8.8   14.6    1.9    2.5
+DNS-02   1.1.1.1                                    0.0%     8    8.0   12.1    8.0   17.3    3.3    3.6
+DNS-02   8.8.8.8                                    0.0%     8   14.3   13.9    7.5   18.7    3.4    2.8
+MTU-01   1.1.1.1                                    0.0%     1 path MTU 1500                            
+NAT-01   stun                                       0.0%     1    8.9    8.9    8.9    8.9    0.0      -
+MEDIA-01 stun.l.google.com:19302                    0.0%    39   14.4   11.4    5.1   17.5    3.1    3.8
+MEDIA-01 worldaz.tr.teams.microsoft.com             0.0%    39    9.7   12.8    5.8   20.0    3.2    3.8
+MEET-01  stun.l.google.com:19302                    0.0%     4   10.9   11.1    9.2   14.8    2.3    3.2
+SRC-01   worldaz.tr.teams.microsoft.com             0.0%     1   10.5   10.5   10.5   10.5    0.0      -
+SVC-01   meet.google.com                            0.0%     2   10.8   13.7   10.8   16.6    2.9      -
+SVC-01   outlook.office365.com                      0.0%     2   14.0   15.0   14.0   16.1    1.0      -
+SVC-01   teams.microsoft.com                        0.0%     2   11.9   11.3   10.7   11.9    0.6      -
+SVC-01   zoom.us                                    0.0%     2    7.8   10.3    7.8   12.8    2.5      -
+TEAMS-01 worldaz.tr.teams.microsoft.com:3478        0.0%     4   15.6   12.3   10.6   15.6    1.9    2.0
+TEAMS-02 worldaz.tr.teams.microsoft.com:443         0.0%     4   11.8   10.9    6.9   13.4    2.4    4.2
+
+[90mq quit  r reset counters[0m

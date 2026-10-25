@@ -22,8 +22,17 @@ import (
 // The series catalog is built once at start; an adapter change resets the
 // gates but does not rebuild series (series restart is Phase 9).
 func Live(ctx context.Context, sc *Scenario, c clock.Clock, out io.Writer) (engine.Snapshot, error) {
+	return LiveOn(ctx, sc, engine.New(sc.Config(), c), c, out)
+}
+
+// LiveOn is Live on a given engine (created for sc.Config() on clock c),
+// so the console can render its snapshots while the scenario plays. A nil
+// out discards the plain lines.
+func LiveOn(ctx context.Context, sc *Scenario, eng *engine.Engine, c clock.Clock, out io.Writer) (engine.Snapshot, error) {
+	if out == nil {
+		out = io.Discard
+	}
 	cfg := sc.Config()
-	eng := engine.New(cfg, c)
 	gen := NewGenerator(sc)
 	sys, err := sc.SystemAt(0)
 	if err != nil {

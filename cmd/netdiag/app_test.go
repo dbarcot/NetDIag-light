@@ -12,6 +12,7 @@ import (
 
 	"netdiag/internal/clock"
 	"netdiag/internal/config"
+	"netdiag/internal/engine"
 	"netdiag/internal/sysapi"
 )
 
@@ -26,8 +27,30 @@ func TestRun_SimPlaysScenario(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", code, a.errOut)
 	}
 	out := a.out.String()
-	if !strings.Contains(out, `simulation "no_link"`) || !strings.Contains(out, "end of simulation: NO_LINK (no link) [exit 10]") {
+	if !strings.Contains(out, `simulation "no_link"`) || !strings.Contains(out, "final: NO_LINK (no link) [exit 10]") {
 		t.Errorf("output:\n%s", out)
+	}
+}
+
+// On a console, --sim shows the full live view (SPEC §9) and restores the
+// console modes when the scenario ends.
+func TestRun_SimShowsConsoleView(t *testing.T) {
+	t.Parallel()
+	a := newTestApp(2)
+	con := &sysapi.FakeConsole{Count: 2, In: 0x1f7, Out: 0x3, Cols: 120, Keys: make(chan sysapi.Key)}
+	a.console = con
+	a.fs.Put(`C:\sc\no_link.json`, []byte(simNoLink))
+	if code := a.main([]string{"run", "--sim", `C:\sc\no_link.json`}); code != exitOK {
+		t.Fatalf("exit %d, stderr %q", code, a.errOut)
+	}
+	view := con.Output()
+	for _, want := range []string{"\x1b[H", "Config: simulation no_link", "Verdict: ", "NO_LINK", "Call quality: ", "Name ", "LAN-01", "final: NO_LINK"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("console output lacks %q:\n%s", want, view)
+		}
+	}
+	if in, _ := con.InMode(); in != 0x1f7 {
+		t.Errorf("stdin mode %#x not restored", in)
 	}
 }
 
@@ -82,12 +105,12 @@ func newTestApp(consoleCount int) *testApp {
 			stdin:   in,
 			stdout:  out,
 			stderr:  errOut,
-			console: &sysapi.FakeConsole{Count: consoleCount},
+			console: &sysapi.FakeConsole{Count: consoleCount, NoIn: true, NoOut: true}, // redirected: plain output
 			fs:      fsys,
 			paths:   config.Paths{ExeDir: `C:\tools`, AppData: `C:\Users\u\AppData\Roaming`},
 			version: "1.2.3",
 			commit:  "abc1234",
-			live:    func(context.Context, *config.Config, io.Writer, string) error { return nil },
+			live:    func(context.Context, *config.Config, *engine.Engine, string) error { return nil },
 		},
 		out: out, errOut: errOut, stdin: in, fs: fsys,
 	}
@@ -365,9 +388,11 @@ func TestRun_StartsLiveProbingWithTheLoadedConfig(t *testing.T) {
 	a := newTestApp(2)
 	var gotCfg *config.Config
 	var gotLog string
-	a.live = func(_ context.Context, cfg *config.Config, out io.Writer, logPath string) error {
+	a.live = func(_ context.Context, cfg *config.Config, eng *engine.Engine, logPath string) error {
 		gotCfg, gotLog = cfg, logPath
-		_, _ = io.WriteString(out, "09:00:00  OK [exit 0]\n")
+		if eng == nil {
+			t.Error("no engine for the console")
+		}
 		return nil
 	}
 	if code := a.main([]string{"run", "--port", "9999", "--csv", `C:\logs`, "--log", `C:\l.txt`}); code != exitOK {
@@ -376,7 +401,7 @@ func TestRun_StartsLiveProbingWithTheLoadedConfig(t *testing.T) {
 	if gotCfg == nil || gotCfg.UI.Port != 9999 || gotCfg.CSV.Dir != `C:\logs` || gotLog != `C:\l.txt` {
 		t.Errorf("live got cfg %+v, log %q", gotCfg, gotLog)
 	}
-	if !strings.Contains(a.out.String(), "OK [exit 0]") || strings.Contains(a.out.String(), "not implemented") {
+	if !strings.Contains(a.out.String(), "final: CHECKING") || strings.Contains(a.out.String(), "not implemented") {
 		t.Errorf("out = %q", a.out)
 	}
 }
@@ -384,7 +409,7 @@ func TestRun_StartsLiveProbingWithTheLoadedConfig(t *testing.T) {
 func TestRun_LiveErrorExitsOne(t *testing.T) {
 	t.Parallel()
 	a := newTestApp(2)
-	a.live = func(context.Context, *config.Config, io.Writer, string) error {
+	a.live = func(context.Context, *config.Config, *engine.Engine, string) error {
 		return errors.New("list adapters: boom")
 	}
 	if code := a.main([]string{"run"}); code != exitRuntime || !strings.Contains(a.errOut.String(), "list adapters: boom") {
@@ -395,7 +420,7 @@ func TestRun_LiveErrorExitsOne(t *testing.T) {
 func TestRun_HeadlessIsNotImplementedYet(t *testing.T) {
 	t.Parallel()
 	a := newTestApp(2)
-	a.live = func(context.Context, *config.Config, io.Writer, string) error {
+	a.live = func(context.Context, *config.Config, *engine.Engine, string) error {
 		t.Error("headless must not start live probing yet")
 		return nil
 	}

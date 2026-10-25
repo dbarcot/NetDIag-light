@@ -1,0 +1,35 @@
+netdiag 1.2.3  12:00:30  Config: simulation captive_portal  Web UI: http://127.0.0.1:48765/
+Adapter: Wi-Fi  IP: 192.168.1.23  Gateway: 192.168.1.1 (aa:bb:cc:dd:ee:ff)  DNS: 192.168.1.1
+Public IP: -  Wi-Fi: Home 78% 5 GHz  CPU: Light 10%
+Verdict: CAPTIVE_PORTAL  Flags: -
+Call quality: Good  MOS 4.40  RTT 12.0 ms  jitter 2.8 ms  loss 0.0%  [MEDIA-01 Teams]
+Teams: UDP 3478 ok, TCP 443 ok, MOS 4.40   Meet: ok, MOS 4.39
+
+Name     Host                                      Loss%   Snt   Last    Avg   Best   Wrst  StDev Jitter
+LAN-01   192.168.1.1                                0.0%    31    1.7    1.5    0.8    2.3    0.3    0.4
+LAN-02   192.168.1.1                                0.0%     7   14.3   10.7    3.8   14.6    3.7    6.3
+DNS-01   192.168.1.1                                0.0%     6   11.1   12.6    8.7   15.2    2.2    2.1
+HTTP-01  http://connectivitycheck.gstatic.com/ge… 100.0%     2      -      -      -      -      -      -
+HTTP-01  http://www.msftconnecttest.com/connectt… 100.0%     2      -      -      -      -      -      -
+MTU-01   192.168.1.1                                0.0%     1 path MTU 1500                            
+NET-01   1.1.1.1                                    0.0%    30    9.2   12.9    7.7   18.4    2.5    2.8
+NET-01   8.8.8.8                                    0.0%    30   11.9   11.3    6.3   16.0    2.5    2.9
+NET-04   1.1.1.1:443                                0.0%    30   11.7   11.5    1.7   17.1    3.2    4.1
+RT-01    stun.cloudflare.com:3478                   0.0%     6    8.9   13.3    8.9   19.0    3.2    4.2
+RT-01    stun.l.google.com:19302                    0.0%     6   15.0   12.7    9.8   15.0    1.8    3.0
+DNS-02   1.1.1.1                                    0.0%     6   11.0   13.4   10.3   18.0    2.6    3.2
+DNS-02   8.8.8.8                                    0.0%     6    7.4   10.1    6.3   13.8    2.6    2.8
+MTU-01   1.1.1.1                                    0.0%     1 path MTU 1500                            
+NAT-01   stun                                       0.0%     1   13.1   13.1   13.1   13.1    0.0      -
+MEDIA-01 stun.l.google.com:19302                    0.0%    29   10.6   11.6    6.9   17.2    2.7    3.9
+MEDIA-01 worldaz.tr.teams.microsoft.com             0.0%    29    9.2   12.0    7.6   17.1    2.3    2.8
+MEET-01  stun.l.google.com:19302                    0.0%     3   12.1   10.3    7.0   12.1    2.4    5.0
+SRC-01   worldaz.tr.teams.microsoft.com             0.0%     1    8.5    8.5    8.5    8.5    0.0      -
+SVC-01   meet.google.com                            0.0%     1   10.5   10.5   10.5   10.5    0.0      -
+SVC-01   outlook.office365.com                      0.0%     1   13.3   13.3   13.3   13.3    0.0      -
+SVC-01   teams.microsoft.com                        0.0%     1   15.9   15.9   15.9   15.9    0.0      -
+SVC-01   zoom.us                                    0.0%     1   16.6   16.6   16.6   16.6    0.0      -
+TEAMS-01 worldaz.tr.teams.microsoft.com:3478        0.0%     3   12.5   14.1   12.5   15.5    1.2    2.0
+TEAMS-02 worldaz.tr.teams.microsoft.com:443         0.0%     3   11.5   10.7    7.4   13.2    2.4    3.7
+
+q quit  r reset counters

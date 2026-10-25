@@ -41,9 +41,15 @@ type Console interface {
 	SetOutMode(mode uint32) error
 	// Width is the visible console width in columns.
 	Width() (int, error)
+	// Height is the visible console height in rows.
+	Height() (int, error)
 	// ReadKey blocks until a key-down event arrives or ctx ends. Non-key
 	// events and key-up events are skipped.
 	ReadKey(ctx context.Context) (Key, error)
+	// Write writes UTF-8 text to the console as UTF-16 (WriteConsoleW), so
+	// the output does not depend on the console code page (SPEC §9). It
+	// fails wrapping ErrNotConsole when stdout is redirected.
+	Write(p []byte) (int, error)
 }
 
 // RawInputMode returns the stdin mode for live key input (SPEC §9): no line

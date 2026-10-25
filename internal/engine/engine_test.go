@@ -189,6 +189,9 @@ func TestEngine_WiFiOfPrimaryAndCPUAverage(t *testing.T) {
 	if !slices.Contains(s.Result.Flags, verdict.FlagWiFiWeak) || !slices.Contains(s.Result.Flags, verdict.FlagCPUHigh) {
 		t.Errorf("flags %v (CPU avg 80 ≥ 75)", s.Result.Flags)
 	}
+	if !s.HasCPU || s.CPUAvg10 != 80 {
+		t.Errorf("snapshot CPU %v %v, want the 10 s average 80 for the console header", s.HasCPU, s.CPUAvg10)
+	}
 	c.Advance(10 * time.Second)
 	if slices.Contains(e.Snapshot().Result.Flags, verdict.FlagCPUHigh) {
 		t.Error("CPU_HIGH must use only the last 10 s")
@@ -350,5 +353,31 @@ func TestEngine_StaleGenerationCannotAddSeries(t *testing.T) {
 	e.SetSeries(BuildSeries(config.Default(), e.Primary()))
 	if slices.Contains(e.Store().IDs(), "TRC-01:03") {
 		t.Error("old trace hops must be removed by the next SetSeries")
+	}
+}
+
+// Reset (the r key) clears stats, Sent counters and graph history, but
+// keeps the gates and the adapter history (SPEC §9).
+func TestEngine_ResetClearsCountersKeepsGates(t *testing.T) {
+	t.Parallel()
+	e, c := newEngine(t)
+	e.SetSystem(system(wifiAdapter("192.168.1.23/24", "192.168.1.1"), "192.168.1.1"))
+	e.SetSeries(BuildSeries(config.Default(), e.Primary()))
+	for range 5 {
+		feedSecond(e, c, nil)
+	}
+	before := e.Snapshot()
+	if before.Gates[gate.L4].State != gate.Open || e.Store().Stats("NET-01:1.1.1.1").Sent == 0 {
+		t.Fatalf("setup: L4 %s", before.Gates[gate.L4].State)
+	}
+	e.Reset()
+	after := e.Snapshot()
+	for _, id := range e.Store().IDs() {
+		if n := len(e.Store().History(id)); n != 0 {
+			t.Errorf("%s keeps %d samples after reset", id, n)
+		}
+	}
+	if after.Gates != before.Gates || len(e.GateHistory()) == 0 {
+		t.Errorf("gates changed by reset: %v -> %v", before.Gates, after.Gates)
 	}
 }

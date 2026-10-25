@@ -47,6 +47,9 @@ type Snapshot struct {
 	Hops []probe.Hop
 	// AdapterEvents are the adapter changes of the run.
 	AdapterEvents []AdapterChange
+	// CPUAvg10 is the average CPU % over the last 10 s (valid with HasCPU).
+	CPUAvg10 float64
+	HasCPU   bool
 }
 
 // Engine is safe for concurrent use: the scheduler's series goroutines
@@ -319,6 +322,15 @@ func (e *Engine) Tick() {
 	e.gates.Tick()
 }
 
+// Reset clears the rolling-window stats, Sent counters and graph history
+// of every series (the `r` key, SPEC §9). Gates, verdict history and
+// adapter events are kept.
+func (e *Engine) Reset() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.store.Reset()
+}
+
 // SetCSVError raises or clears CSV_WRITE_ERROR.
 func (e *Engine) SetCSVError(on bool) {
 	e.mu.Lock()
@@ -380,6 +392,8 @@ func (e *Engine) Snapshot() Snapshot {
 		Primary:        e.primary,
 		AdapterChanges: e.adapterChanges,
 		Specs:          slices.Clone(e.specs),
+		CPUAvg10:       in.CPUAvg10,
+		HasCPU:         in.HasCPU,
 	}
 	if e.wifi != nil {
 		w := *e.wifi

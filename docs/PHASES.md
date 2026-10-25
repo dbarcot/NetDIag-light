@@ -119,9 +119,9 @@ Rules (from `CLAUDE.md`): finish phases in order; tests are written during the p
 - Call quality line uses MEDIA-01 when present and falls back to NET-01 `1.1.1.1` (label changes).
 
 **Acceptance**
-- [ ] `netdiag run --sim …` shows the full console view
-- [ ] `netdiag run > out.txt` produces plain lines
-- [ ] Goldens reviewed and committed
+- [x] `netdiag run --sim …` shows the full console view
+- [x] `netdiag run > out.txt` produces plain lines
+- [x] Goldens reviewed and committed
 
 ---
 

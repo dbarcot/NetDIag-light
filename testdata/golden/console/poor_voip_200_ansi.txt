@@ -1,0 +1,35 @@
+netdiag 1.2.3  12:00:40  Config: simulation poor_voip  Web UI: http://127.0.0.1:48765/
+Adapter: Ethernet  IP: 192.168.1.23  Gateway: 192.168.1.1 (aa:bb:cc:dd:ee:ff)  DNS: 192.168.1.1
+Public IP: -  CPU: Light 10%
+Verdict: [1;31mQUALITY_POOR_VOIP (MEDIA-01:teams)[0m  Flags: -
+Call quality: [31mPoor[0m  MOS 4.06  RTT 183.3 ms  jitter 23.9 ms  loss 0.0%  [MEDIA-01 Teams]                       [33m▂▄▆▄▆▄▅▃▂▃▆▃▄▂▄▂▂▆▁▆▅█▃▅▂▃▂▆▁▄▅▂▄▄▃▄▄▄▅[0m
+Teams: UDP 3478 ok, TCP 443 ok, MOS 4.06   Meet: ok, MOS 4.40
+
+[1mName     Host                                      Loss%   Snt   Last    Avg   Best   Wrst  StDev Jitter Last 60 s                                                   [0m
+LAN-01   192.168.1.1                                0.0%    41    1.3    1.6    0.8    2.2    0.3    0.3                    ▄▅▃▅▅▃▆▆▅▄▇▃▅▅▅▆▅▅▃▇▅▄▃▅▅▃█▆▅▅▄▅▁▄▅▄▇▇▄▄▄
+LAN-02   192.168.1.1                                0.0%     9   13.8   12.5    9.7   14.7    1.6    1.7                    ▁    ▄    ▆    █    ▄    ▃    ▃    █    ▇
+DNS-01   192.168.1.1                                0.0%     8   15.3   12.2    9.3   15.3    1.9    2.2                     ▂    ▁    ▅    ▃    ▇    ▅    ▄    █    
+HTTP-01  http://connectivitycheck.gstatic.com/ge…   0.0%     3   16.1   15.1   14.3   16.1    0.7    0.9                     ▁              ▄              █         
+HTTP-01  http://www.msftconnecttest.com/connectt…   0.0%     3   13.1   13.7   13.1   14.7    0.8    1.6                     ▁              █              ▁         
+MTU-01   192.168.1.1                                0.0%     1 path MTU 1500                                                                                         
+NET-01   1.1.1.1                                    0.0%    40   13.8   11.9    7.4   16.4    2.1    2.5                     ▆▂▃▅▄▂▄▅▅▄▆▃▄▄▆▅▅▄▂▇▅▃▅▂▆█▁▂▆▄▆▅▅▄▆▁▅▆▆▆
+NET-01   8.8.8.8                                    0.0%    40   10.6   11.8    4.4   18.4    3.1    3.1                     ▇█▃▄█▅▄▇▄▅▅▄▃▅▅▁▅▆▅▅▃▃▂▄▂▅▄▅▅▅▅▃▅▄▅▇▇▅▆▄
+NET-04   1.1.1.1:443                                0.0%    40   11.0   11.7    5.9   16.9    2.5    2.5                     ▁▃▅▇▂▄▅▇▄▅▂██▇▆▆▄▅▄▃▆▅▅▆▃▄▅▄▆▄▄▆▆▄▂▄▃▄▆▄
+RT-01    stun.cloudflare.com:3478                   0.0%     8   14.3   12.6    9.2   14.3    1.7    2.4                     ▆    ▇    ▁    ▇    ▆    ▃    █    █    
+RT-01    stun.l.google.com:19302                    0.0%     8    7.4   11.3    7.4   15.5    2.7    2.4                     ▇    ▄    █    ▆    ▅    ▂    ▂    ▁    
+DNS-02   1.1.1.1                                    0.0%     8   13.9   13.1   10.7   14.1    1.2    1.4                      ▃    ▄    ▇    █    ▁    █    █    ▇   
+DNS-02   8.8.8.8                                    0.0%     8   11.3   12.9    9.9   15.6    2.1    1.6                      ▁    ▃    ▅    █    █    ▇    ▂    ▃   
+MTU-01   1.1.1.1                                    0.0%     1 path MTU 1500                                                                                         
+NAT-01   stun                                       0.0%     1   14.9   14.9   14.9   14.9    0.0      -                      ▁                                      
+MEDIA-01 stun.l.google.com:19302                    0.0%    39    9.1   12.3    5.9   17.9    2.6    3.1                      ▇▃▆▃▅▄▆▅▃▆▃▅▃▁█▆▄▄▄▃▃▅▄▅▄▄▆▆▄▅▆▆▅▄▇▅▆█▃
+MEDIA-01 worldaz.tr.teams.microsoft.com             0.0%    39  200.8  183.3  150.7  231.1   17.9   23.9                      [33m▂▄▆▄▆▄▅▃▂▃▆▃▄▂▄▂▂▆▁▆▅█▃▅▂▃▂▆▁▄▅▂▄▄▃▄▄▄▅[0m
+MEET-01  stun.l.google.com:19302                    0.0%     4    8.9    8.6    5.3   11.5    2.2    3.2                      ▁         █         ▅         ▅        
+SRC-01   worldaz.tr.teams.microsoft.com             0.0%     1   11.0   11.0   11.0   11.0    0.0      -                      ▁                                      
+SVC-01   meet.google.com                            0.0%     2    7.9   10.4    7.9   12.8    2.5      -                      █                             ▁        
+SVC-01   outlook.office365.com                      0.0%     2    8.7   11.0    8.7   13.2    2.2      -                      █                             ▁        
+SVC-01   teams.microsoft.com                        0.0%     2   12.7   11.6   10.4   12.7    1.2      -                      ▁                             █        
+SVC-01   zoom.us                                    0.0%     2   12.2   15.1   12.2   17.9    2.9      -                      █                             ▁        
+TEAMS-01 worldaz.tr.teams.microsoft.com:3478        0.0%     4   12.1   14.7   11.8   20.3    3.4    4.9                      ▃         █         ▁         ▁        
+TEAMS-02 worldaz.tr.teams.microsoft.com:443         0.0%     4    8.5    9.7    7.9   11.4    1.5    3.2                      ▇         ▁         █         ▂        
+
+[90mq quit  r reset counters[0m

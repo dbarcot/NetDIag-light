@@ -24,12 +24,17 @@ var RouteProbeTarget = netip.MustParseAddr("1.1.1.1")
 
 // LiveOptions configure RunLive.
 type LiveOptions struct {
-	Cfg    *config.Config
-	Clock  clock.Clock
-	Sys    sysapi.System // adapters, routes, Wi-Fi and change notifications
-	Deps   Deps
+	Cfg   *config.Config
+	Clock clock.Clock
+	Sys   sysapi.System // adapters, routes, Wi-Fi and change notifications
+	Deps  Deps
+	// Out receives the plain verdict-change lines; nil discards them (the
+	// console renders from the engine instead).
 	Out    io.Writer
 	Logger *slog.Logger
+	// Engine, if set, is the engine to run (the console reads its
+	// snapshots); otherwise RunLive creates one for Cfg.
+	Engine *Engine
 }
 
 // RunLive runs the real probes on the real scheduler: it polls the OS
@@ -40,7 +45,13 @@ type LiveOptions struct {
 // primary adapter changes, the gates are reset and the series are rebuilt
 // for the new adapter. It returns the final snapshot when ctx ends.
 func RunLive(ctx context.Context, o LiveOptions) (Snapshot, error) {
-	eng := New(o.Cfg, o.Clock)
+	eng := o.Engine
+	if eng == nil {
+		eng = New(o.Cfg, o.Clock)
+	}
+	if o.Out == nil {
+		o.Out = io.Discard
+	}
 	if err := refreshSystem(ctx, eng, o.Sys); err != nil {
 		return Snapshot{}, err
 	}

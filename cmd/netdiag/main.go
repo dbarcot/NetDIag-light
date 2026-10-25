@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"netdiag/internal/clock"
 	"netdiag/internal/config"
@@ -25,19 +26,21 @@ func main() {
 	if exe, err := os.Executable(); err == nil {
 		exeDir = filepath.Dir(exe)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	// Ctrl+C, and console close/logoff/shutdown (SIGTERM on Windows)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	a := &app{
-		ctx:     ctx,
-		clock:   clock.Real{},
-		stdin:   os.Stdin,
-		stdout:  os.Stdout,
-		stderr:  os.Stderr,
-		console: sysapi.NewConsole(),
-		fs:      config.OSFS{},
-		paths:   config.Paths{ExeDir: exeDir, AppData: os.Getenv("APPDATA")},
-		version: version,
-		commit:  commit,
-		live:    realLive,
+		ctx:       ctx,
+		clock:     clock.Real{},
+		stdin:     os.Stdin,
+		stdout:    os.Stdout,
+		stderr:    os.Stderr,
+		console:   sysapi.NewConsole(),
+		lookupEnv: os.LookupEnv,
+		fs:        config.OSFS{},
+		paths:     config.Paths{ExeDir: exeDir, AppData: os.Getenv("APPDATA")},
+		version:   version,
+		commit:    commit,
+		live:      realLive,
 	}
 	code := a.main(os.Args[1:])
 	stop()
