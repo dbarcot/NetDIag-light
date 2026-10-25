@@ -43,6 +43,8 @@ type Snapshot struct {
 	WiFi           *sysapi.WiFiStatus
 	AdapterChanges int
 	Specs          []Spec
+	// Hops are the TRC-01 hops seen so far (empty before the first trace).
+	Hops []probe.Hop
 }
 
 // Engine is safe for concurrent use: the scheduler's series goroutines
@@ -62,7 +64,12 @@ type Engine struct {
 	havePrimary    bool
 	adapterChanges int
 	csvErr         bool
+	hops           func() []probe.Hop
 }
+
+// TraceID is the gate-only series of TRC-01: the tracer asks it whether to
+// probe (L3 open). The hop series themselves are added as they are found.
+const TraceID = "TRC-01"
 
 // New returns an engine for cfg on clock c.
 func New(cfg *config.Config, c clock.Clock) *Engine {
@@ -131,13 +138,45 @@ func (e *Engine) SetSeries(specs []Spec) {
 	defer e.mu.Unlock()
 	e.specs = append([]Spec(nil), specs...)
 	e.byID = make(map[string]Spec, len(specs))
-	gs := make([]gate.Series, 0, len(specs))
+	gs := make([]gate.Series, 0, len(specs)+1)
 	for _, s := range specs {
 		e.byID[s.ID] = s
 		gs = append(gs, s.Series)
 		e.store.Register(s.ID, s.Interval)
 	}
+	// TRC-01 runs whenever L3 is open (SPEC §6)
+	gs = append(gs, gate.Series{ID: TraceID, Interval: time.Second, Requires: gate.L3})
 	e.gates.SetSeries(gs)
+}
+
+// AddSeries adds one series after SetSeries (TRC-01 hops appear while the
+// trace runs). It does nothing if the series exists.
+func (e *Engine) AddSeries(s Spec) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.byID[s.ID]; ok {
+		return
+	}
+	e.specs = append(e.specs, s)
+	e.byID[s.ID] = s
+	e.store.Register(s.ID, s.Interval)
+}
+
+// SetTrace sets where snapshots get the trace hops from.
+func (e *Engine) SetTrace(hops func() []probe.Hop) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.hops = hops
+}
+
+// TraceDecision is the gate of TRC-01.
+func (e *Engine) TraceDecision() sched.Decision { return e.Decision(TraceID) }
+
+// AdapterChanges counts the primary adapter changes so far.
+func (e *Engine) AdapterChanges() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.adapterChanges
 }
 
 // Specs returns the series catalog.
@@ -238,6 +277,9 @@ func (e *Engine) Snapshot() Snapshot {
 	if e.wifi != nil {
 		w := *e.wifi
 		snap.WiFi = &w
+	}
+	if e.hops != nil {
+		snap.Hops = e.hops()
 	}
 	return snap
 }

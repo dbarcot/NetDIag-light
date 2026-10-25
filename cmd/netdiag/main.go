@@ -37,6 +37,7 @@ func main() {
 		paths:   config.Paths{ExeDir: exeDir, AppData: os.Getenv("APPDATA")},
 		version: version,
 		commit:  commit,
+		live:    realLive,
 	}
 	code := a.main(os.Args[1:])
 	stop()

@@ -1,0 +1,15 @@
+{
+  "name": "http_check_filtered",
+  "description": "A web filter redirects one captive-portal check (msftconnecttest) while the other passes: info flag HTTP_CHECK_FILTERED, no CAPTIVE_PORTAL",
+  "duration_s": 40,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probe": "HTTP-01", "target": "http://www.msftconnecttest.com/connecttest.txt", "result": "captive" } ],
+  "expect": [
+    { "at_s": 5, "verdict": "OK" },
+    { "at_s": 30, "verdict": "OK", "exit_code": 0, "flags_include": ["HTTP_CHECK_FILTERED:www.msftconnecttest.com"] }
+  ]
+}

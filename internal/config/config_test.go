@@ -262,7 +262,7 @@ func TestParse_ErrorsNameExactKeyPath(t *testing.T) {
 		{"cpu_high not above moderate", `{"thresholds": {"cpu_high_pct": 50}}`, "thresholds.cpu_high_pct"},
 		{"cpu_heavy not above high", `{"thresholds": {"cpu_heavy_pct": 75}}`, "thresholds.cpu_heavy_pct"},
 		{"trace max_hops", `{"trace": {"max_hops": 0}}`, "trace.max_hops"},
-		{"trace interval below 100", `{"trace": {"interval_ms": 99}}`, "trace.interval_ms"},
+		{"trace interval below 200 (5 packets/s cap)", `{"trace": {"interval_ms": 199}}`, "trace.interval_ms"},
 		{"max_custom_targets", `{"limits": {"max_custom_targets": -1}}`, "limits.max_custom_targets"},
 		{"csv separator", `{"csv": {"separator": "\t"}}`, "csv.separator"},
 		{"csv decimal", `{"csv": {"decimal": ";"}}`, "csv.decimal"},

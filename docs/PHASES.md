@@ -98,9 +98,9 @@ Rules (from `CLAUDE.md`): finish phases in order; tests are written during the p
 - Integration: each real probe once against its default public target; DNS-01 against the system resolver; MTU to gateway returns 1500 or a plausible value; trace to `1.1.1.1` ends at the target.
 
 **Acceptance**
-- [ ] Every probe ID from SPEC §5 except TEAMS/MEET/MEDIA/SRC exists with unit tests
-- [ ] Integration suite passes on a normal home/office connection
-- [ ] Scenario `http_check_filtered` (one HTTP-01 check captive, the other ok → `OK` + `HTTP_CHECK_FILTERED:<host>`, no `CAPTIVE_PORTAL`) passes and is in the required list of TESTING.md
+- [x] Every probe ID from SPEC §5 except TEAMS/MEET/MEDIA/SRC exists with unit tests
+- [x] Integration suite passes on a normal home/office connection
+- [x] Scenario `http_check_filtered` (one HTTP-01 check captive, the other ok → `OK` + `HTTP_CHECK_FILTERED:<host>`, no `CAPTIVE_PORTAL`) passes and is in the required list of TESTING.md
 
 ---
 

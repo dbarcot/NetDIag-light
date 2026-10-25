@@ -114,6 +114,7 @@ func healthy() Input {
 			series("RT-01:stun.l.google.com:19302", "ooo", 15),
 			series("DNS-02:1.1.1.1", "ooo", 10),
 			series("HTTP-01:http://www.msftconnecttest.com/connecttest.txt", "ooo", 20),
+			series(gstatic, "ooo", 20),
 			series("TEAMS-01:relay:3478", "ooo", 20),
 			series("TEAMS-02:relay:443", "ooo", 20),
 			series("MEET-01:stun.l.google.com:19302", "ooo", 20),
@@ -166,12 +167,15 @@ func TestEvaluate_Healthy(t *testing.T) {
 	}
 }
 
-const httpCheck = "HTTP-01:http://www.msftconnecttest.com/connecttest.txt"
+const (
+	httpCheck = "HTTP-01:http://www.msftconnecttest.com/connecttest.txt"
+	gstatic   = "HTTP-01:http://connectivitycheck.gstatic.com/generate_204"
+)
 
 func TestEvaluate_GateVerdicts(t *testing.T) {
 	t.Parallel()
 	lan := healthy()
-	captive := series(httpCheck, "oc", 0)
+	captive := []SeriesData{series(httpCheck, "oc", 0), series(gstatic, "oc", 0)}
 	tests := []struct {
 		name string
 		in   Input
@@ -188,14 +192,14 @@ func TestEvaluate_GateVerdicts(t *testing.T) {
 		{"L1 unknown", gates(lan, gate.L1, gate.Unknown), Checking},
 		{"L5 unknown is not CHECKING", gates(lan, gate.L5, gate.Unknown), OK},
 		// a captive portal usually blocks the internet and often DNS
-		{"captive with L4 closed", with(gates(lan, gate.L4, gate.Closed), captive), CaptivePortal},
-		{"captive with L4 unknown", with(gates(lan, gate.L4, gate.Unknown), captive), CaptivePortal},
-		{"captive with L5 closed, public DNS ok", with(gates(lan, gate.L5, gate.Closed), captive), CaptivePortal},
-		{"captive with L5 closed, public DNS fails", with(gates(lan, gate.L5, gate.Closed), captive, series("DNS-02:1.1.1.1", "ooff", 0)), CaptivePortal},
-		{"L3 closed outranks captive", with(gates(lan, gate.L3, gate.Closed), captive), GWUnreachable},
-		{"L3 unknown outranks captive", with(gates(lan, gate.L3, gate.Unknown), captive), Checking},
-		{"HTTP-01 DNS failure is not captive", with(gates(lan, gate.L4, gate.Closed), series(httpCheck, "ddd", 0)), ISPDown},
-		{"old captive result followed by ok", with(gates(lan, gate.L4, gate.Closed), series(httpCheck, "cco", 0)), ISPDown},
+		{"captive with L4 closed", with(gates(lan, gate.L4, gate.Closed), captive...), CaptivePortal},
+		{"captive with L4 unknown", with(gates(lan, gate.L4, gate.Unknown), captive...), CaptivePortal},
+		{"captive with L5 closed, public DNS ok", with(gates(lan, gate.L5, gate.Closed), captive...), CaptivePortal},
+		{"captive with L5 closed, public DNS fails", with(gates(lan, gate.L5, gate.Closed), append(captive, series("DNS-02:1.1.1.1", "ooff", 0))...), CaptivePortal},
+		{"L3 closed outranks captive", with(gates(lan, gate.L3, gate.Closed), captive...), GWUnreachable},
+		{"L3 unknown outranks captive", with(gates(lan, gate.L3, gate.Unknown), captive...), Checking},
+		{"HTTP-01 DNS failure is not captive", with(gates(lan, gate.L4, gate.Closed), series(httpCheck, "ddd", 0), series(gstatic, "ddd", 0)), ISPDown},
+		{"old captive result followed by ok", with(gates(lan, gate.L4, gate.Closed), series(httpCheck, "cco", 0), series(gstatic, "cco", 0)), ISPDown},
 		{"lowest closed gate wins", func() Input {
 			i := gates(lan, gate.L4, gate.Closed)
 			i.Gates[gate.L3] = gate.Status{State: gate.Closed}
@@ -219,7 +223,10 @@ func TestEvaluate_NetworkVerdicts(t *testing.T) {
 		want   Verdict
 		detail string
 	}{
-		{"captive portal", with(h, series("HTTP-01:http://www.msftconnecttest.com/connecttest.txt", "c", 0)), CaptivePortal, ""},
+		{"captive portal", with(h, series("HTTP-01:http://www.msftconnecttest.com/connecttest.txt", "c", 0), series(gstatic, "c", 0)), CaptivePortal, ""},
+		{"one captive check, the other passes: web filter", with(h, series("HTTP-01:http://www.msftconnecttest.com/connecttest.txt", "c", 0)), OK, ""},
+		{"captive check, the other timed out: still a portal", with(h, series("HTTP-01:http://www.msftconnecttest.com/connecttest.txt", "c", 0), series(gstatic, "ff", 0)), CaptivePortal, ""},
+		{"captive check, the other without result: still a portal", with(h, series("HTTP-01:http://www.msftconnecttest.com/connecttest.txt", "c", 0), series(gstatic, "", 0)), CaptivePortal, ""},
 		{"UDP blocked", with(h, series("RT-01:stun.cloudflare.com:3478", "fff", 0), series("RT-01:stun.l.google.com:19302", "fff", 0)), UDPBlocked, ""},
 		{"one STUN server failing is not UDP blocked", with(h, series("RT-01:stun.cloudflare.com:3478", "fff", 0)), OK, ""},
 		{"two failures are not yet blocked", with(h, series("RT-01:stun.cloudflare.com:3478", "off", 0), series("RT-01:stun.l.google.com:19302", "off", 0)), OK, ""},
@@ -241,7 +248,7 @@ func TestEvaluate_NetworkVerdicts(t *testing.T) {
 		// priorities
 		{"UDP blocked outranks MTU", with(h, series("RT-01:stun.cloudflare.com:3478", "fff", 0), series("RT-01:stun.l.google.com:19302", "fff", 0), value("MTU-01:1.1.1.1", 1300)), UDPBlocked, ""},
 		{"LAN loss outranks ISP loss", with(h, series("LAN-01:gateway", lossy, 1), series("NET-01:1.1.1.1", lossy, 12), series("NET-01:8.8.8.8", lossy, 13)), LANLoss, ""},
-		{"captive outranks UDP blocked", with(h, series("HTTP-01:http://www.msftconnecttest.com/connecttest.txt", "c", 0), series("RT-01:stun.cloudflare.com:3478", "fff", 0), series("RT-01:stun.l.google.com:19302", "fff", 0)), CaptivePortal, ""},
+		{"captive outranks UDP blocked", with(h, series("HTTP-01:http://www.msftconnecttest.com/connecttest.txt", "c", 0), series(gstatic, "c", 0), series("RT-01:stun.cloudflare.com:3478", "fff", 0), series("RT-01:stun.l.google.com:19302", "fff", 0)), CaptivePortal, ""},
 		// exclusions
 		{"ICMP-blocked gateway is not LAN loss", with(h, series("LAN-01:gateway", "ffffffffffff", 0)), OK, ""},
 		{"ICMP-blocked internet is not ISP loss", with(h, series("NET-01:1.1.1.1", "ffffffffffff", 0), series("NET-01:8.8.8.8", "ffffffffffff", 0)), OK, ""},
@@ -440,5 +447,23 @@ func TestEvaluate_GatewayICMPRateLimited(t *testing.T) {
 		if r.Verdict != tt.want || slices.Contains(r.Flags, FlagGWICMPRateLimited) != tt.flagged {
 			t.Errorf("%s: %s %v, want %s flag %v", tt.name, r.Verdict, r.Flags, tt.want, tt.flagged)
 		}
+	}
+}
+
+func TestEvaluate_HTTPCheckFiltered(t *testing.T) {
+	t.Parallel()
+	h := healthy()
+	r := Evaluate(with(h, series(httpCheck, "c", 0)))
+	if r.Verdict != OK || !slices.Contains(r.Flags, FlagHTTPCheckFiltered+":www.msftconnecttest.com") {
+		t.Errorf("one captive, one ok: %s %v", r.Verdict, r.Flags)
+	}
+	r = Evaluate(with(h, series(httpCheck, "c", 0), series(gstatic, "c", 0)))
+	if r.Verdict != CaptivePortal || slices.ContainsFunc(r.Flags, func(f string) bool { return strings.HasPrefix(f, FlagHTTPCheckFiltered) }) {
+		t.Errorf("all captive: %s %v", r.Verdict, r.Flags)
+	}
+	// the flag is independent of the gates: a filtered check with L4 closed still shows
+	r = Evaluate(with(gates(h, gate.L4, gate.Closed), series(httpCheck, "c", 0)))
+	if r.Verdict != ISPDown || !slices.Contains(r.Flags, FlagHTTPCheckFiltered+":www.msftconnecttest.com") {
+		t.Errorf("L4 closed: %s %v", r.Verdict, r.Flags)
 	}
 }

@@ -73,7 +73,7 @@ func (c *Config) Validate() error {
 	}
 
 	intRange(&v, "trace.max_hops", c.Trace.MaxHops, 1, 64)
-	intRange(&v, "trace.interval_ms", c.Trace.IntervalMs, 100, 10000)
+	intRange(&v, "trace.interval_ms", c.Trace.IntervalMs, 200, 10000) // 5 packets/s cap (CLAUDE.md)
 
 	s := c.CSV
 	if s.Separator != ";" && s.Separator != "," {

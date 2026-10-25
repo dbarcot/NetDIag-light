@@ -4,9 +4,9 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 
 ## Current state
 
-- **Last completed phase:** 3 — gates, verdicts, simulation mode (`c21a8be`), plus Phase 3 review fixes (captive portal with L4/L5 closed, gateway ICMP rate limiting, L3 recovery via NET-04).
-- **Next phase:** 4 — remaining probes (TCP, DNS-01/02, STUN/NAT, HTTP-01, SVC-01, MTU-01, TRC-01, custom targets) and wiring them into scheduler + gates.
-- `netdiag run` without `--sim` still only loads the config and prints "Probing is not implemented in this build yet".
+- **Last completed phase:** 4 — remaining probes and live wiring (commit: see `git log`). Phase 4 has not been reviewed yet.
+- **Next phase:** 5 — console view (`internal/console`).
+- `netdiag run` (no `--sim`, not `--headless`) now runs the real probes and prints the plain verdict-change output until Ctrl+C. `--headless` is still a stub (Phase 9).
 
 ## Completed phases
 
@@ -19,7 +19,8 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 | 2 | `1c1a33b` | clock (fake), probe Sample + ICMP (`IcmpSendEcho2`), stats, store, scheduler |
 | 2 fixes | `48c5645` | Window jitter = mean \|ΔRTT\|, series independence + panic recovery, hardware-only fallback, ICMP min timeout |
 | 3 | `c21a8be` | gate L1–L5, verdict + flags + exit codes, engine (series catalog), sim (35 scenarios), `run --sim` |
-| 3 fixes | see git log | HTTP-01 at L3 + `CAPTIVE_PORTAL` over ISP/DNS verdicts, `GW_ICMP_RATE_LIMITED`, NET-04 L3 recovery (`Sample.Recovery`), 4 new scenarios (39) |
+| 3 fixes | `b68c35d` | HTTP-01 at L3 + `CAPTIVE_PORTAL` over ISP/DNS verdicts, `GW_ICMP_RATE_LIMITED`, NET-04 L3 recovery (`Sample.Recovery`), 4 new scenarios (39) |
+| 4 | see `git log` | probes: TCP, HTTP-01, SVC-01 (TLS), DNS-01 (`DnsQuery_W`) / DNS-02 (miekg), STUN + NAT-01 (pion), MTU-01, TRC-01 tracer, LAN-02, SYS-01, custom targets; `HTTP_CHECK_FILTERED`; `engine.RunLive` + `run` wiring |
 
 ### Key decisions and SPEC deviations
 
@@ -28,17 +29,19 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 - **Phase 2:** **RTT is timed with QueryPerformanceCounter**, not Go's monotonic clock (§5 RTT). Scheduler: fixed grid, start offset [0, min(interval, 1 s)), missed ticks dropped, shutdown run emits nothing, panic → `local_error` (§5). Jitter = mean of \|RTT_i − RTT_{i−1}\| over consecutive ok samples, unknown below 2 pairs (§7). StDev population.
 - **Phase 3:** gate rounds by a 1 s tick, one round per layer period from fresh evidence (≤ 1.5 × interval) instead of a pacer series (§6). Wait retries after min(interval, 1 s) (§6 start-up). L1/L2 without hysteresis; closing a layer makes the ones above unknown (§6). RT-01 with an unresolved STUN name → skipped (§6). Settled loss for `LAN_LOSS`/`ISP_LOSS`; `GW_ICMP_BLOCKED` needs internet working *now* (§8). Call-quality source rules (§8). `run --sim` uses defaults + scenario config, plain output (§3). New package `internal/engine` (CLAUDE.md layout).
 - **Phase 3 fixes:** HTTP-01 requires L3 only; `CAPTIVE_PORTAL` wins over `ISP_DOWN`/`DNS_*` in any L4/L5 state (also L4 unknown), L1–L3 must be open (§6, §8). `LAN_LOSS` needs every NET-01 target lossy too (≥ half the LAN loss or > threshold), else flag `GW_ICMP_RATE_LIMITED`; undecided while NET-01 lacks `min_samples` (§8). NET-04 runs as an L3 recovery probe whenever L3 is **not open** (closed, and also unknown at start-up/reset — extension of the review request, avoids a false `GW_UNREACHABLE`/exit 13 at start with an ICMP-blocking gateway); its samples carry `Recovery=true` and count as skipped in stats/verdicts (§6). During a full outage behind such a gateway the verdict is `GW_UNREACHABLE` (nothing proves the gateway alive).
-- **Before Phase 4 (recorded, to implement in Phase 4):** `CAPTIVE_PORTAL` only when ≥ 1 HTTP-01 check is captive **and** none passes; otherwise flag `HTTP_CHECK_FILTERED:<host>` + scenario `http_check_filtered` (§4.3, §8). HTTP-01/SVC-01: own `http.Transport`, `Proxy: nil`, `DisableKeepAlives`, no redirects, probe timeout; test that `HTTP_PROXY`/`HTTPS_PROXY` are ignored (§4.3). DNS-01: per server, `DNS_QUERY_BYPASS_CACHE`, server in `pExtra` (`IP4_ARRAY`) or `DnsQueryEx` (`DNS_ADDR_ARRAY`); never `net.Resolver` for DNS-01; other probes may use the system resolver (§5).
+- **Phase 4 (rules recorded before the phase, now implemented):** `CAPTIVE_PORTAL` only when ≥ 1 HTTP-01 check is captive **and** none passes; otherwise flag `HTTP_CHECK_FILTERED:<host>` + scenario `http_check_filtered` (§4.3, §8). HTTP-01/SVC-01: own `http.Transport`, `Proxy: nil`, `DisableKeepAlives`, no redirects, probe timeout; test that `HTTP_PROXY`/`HTTPS_PROXY` are ignored (§4.3). DNS-01: per server, `DNS_QUERY_BYPASS_CACHE`, server in `pExtra` (`IP4_ARRAY`) or `DnsQueryEx` (`DNS_ADDR_ARRAY`); never `net.Resolver` for DNS-01; other probes may use the system resolver (§5).
+- **Phase 4 decisions/deviations:** empty `expect_body` = body not compared (§4.3). `trace.interval_ms` minimum raised 100 → 200 (validation + tracer floor) so TRC-01 never exceeds 5 packets/s (§4.5, §5). DNS-01 uses `DnsQuery_W` + `IP4_ARRAY` (not `DnsQueryEx`); a timed-out query keeps running and the next one fails as busy (§5). SVC-01 is a bare TLS handshake, not an HTTP request (§5). RT-01/NAT-01 unresolved name → skipped, NAT-01 needs two STUN servers (§5). TRC-01 hops are series `TRC-01:NN` added at run time (`Engine.AddSeries`); `Snapshot.Hops` carries IPs/names/final flag (§5). `netdiag run` runs `engine.RunLive`: polls adapters/route/Wi-Fi every min(link, wifi) s, rebuilds series on a primary adapter change, plain output (§5 live run). `--log <file>` opens an slog file for warnings and probe panics.
 
 ## Open items
 
-- **Review fixes pending:** none (Phase 1–3 review lists are done). Next item: Phase 4, including the pre-Phase-4 rules above (the `HTTP_CHECK_FILTERED` verdict change is not in the code yet: `CAPTIVE_PORTAL` still fires on any captive check).
-- **Wiring still missing (Phase 4+):** real LAN-02 / SYS-01 / LINK-01 / WIFI-01 probes into the engine; TCP, DNS, STUN, NAT, HTTP, SVC, MTU, TRC probes; TRC-01 is not in the series catalog yet; RT-01 must record "name not resolved" as skipped; `CSV_WRITE_ERROR` is only set by sim events until Phase 6.
+- **Review fixes pending:** none for Phases 1–3. Phase 4 not reviewed yet.
+- **Wiring still missing:** TEAMS-01/02, MEET-01, MEDIA-01, SRC-01 probes (Phase 8; their series exist for sim/verdicts but are not scheduled in a live run); `CSV_WRITE_ERROR` is only set by sim events until Phase 6; `--headless` (Phase 9).
 - **Known limitations:**
-  - `sim.Live` (`run --sim`) resets gates on an adapter change but does not rebuild series (series restart is Phase 9).
+  - `sim.Live` (`run --sim`) resets gates on an adapter change but does not rebuild series; the real `engine.RunLive` does rebuild them (Phase 4). Series IDs of the old adapter stay in the store.
   - After a gateway recovery the verdict shows `CHECKING` for about a second while L4/L5 are re-decided (by design).
   - Settled loss applies to `LAN_LOSS`/`ISP_LOSS` only, not to MOS.
   - `--sim` cannot be combined with `--headless` yet (Phase 9).
+- **Phase 4 not verified:** HTTP-01 / SVC-01 on a network with TLS interception or a real captive portal (only httptest + the open internet); DNS-01 against several adapter DNS servers (one server on this VM); MTU-01 bursts (up to ~25 echoes in a run) against a real rate-limiting router; Wi-Fi roam rebuild.
 - **Unverified on real hardware (dev VM has no Wi-Fi, no Hyper-V switch):** Wi-Fi queries and the Windows 11 location-privacy path (fake-tested only); hardware-only fallback with a real `vEthernet` adapter. Covered by Phase 9 field tests.
 - **"To confirm":** nothing left in SPEC. The Teams relay is unofficial and may stop answering (handled: `TEAMS_RELAY_UNREACHABLE`, SPEC §8.2).
 
@@ -47,7 +50,7 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 - Windows 10 Enterprise LTSC 2019 (build 17763) VM, standard user (no admin), Ethernet only (VirtIO NIC, reports hardware=true), gateway `10.102.200.1`, no WLAN interface (wlansvc running). Path MTU to the internet only ~1400–1420.
 - Go 1.27.2 (`go.mod`: `go 1.27`). `go env` has `CGO_ENABLED=1` (mingw installed) → **always set `CGO_ENABLED=0`** except for `-race`.
 - Tools: golangci-lint v2.15 (`%USERPROFILE%\go\bin`), mingw `windres` + `gcc` (`C:\mingw64\bin`), git 2.55, Chrome (no Edge) for future e2e.
-- Allowed deps fetched fine from proxy.golang.org; only `golang.org/x/sys` is in `go.mod` so far.
+- Allowed deps (from proxy.golang.org) now in `go.mod`: `golang.org/x/sys`, `github.com/miekg/dns` (DNS-02), `github.com/pion/stun/v3` (STUN). chromedp comes with Phase 7.
 
 ### Commands (PowerShell)
 
@@ -65,6 +68,12 @@ go test -tags integration -v -run Sysinfo ./internal/sysapi/ # prints real sysin
 e2e (`-tags e2e`, chromedp) does not exist yet (Phase 7).
 
 ### Lessons learned (non-obvious)
+
+- Lock order: `Engine.Snapshot` holds the engine lock and calls `Tracer.Hops` (tracer lock); the tracer must never call the engine (`Register`/`Emit`) while holding its lock → `Step` registers new hops after unlocking (found as a deadlock in `RunLive` tests).
+- `http.ProxyFromEnvironment` skips localhost and caches the environment once per process, so the no-proxy test dials a fake host name through a `DialFunc` hook and asserts on the Transport itself as well.
+- `DnsQuery_W` with an IP4_ARRAY in `pExtra` works against `127.0.0.x:53` (no admin): the integration test runs its own UDP DNS servers there and counts queries (proves server selection and cache bypass). A closed port answers ICMP unreachable = `WSAECONNRESET` (10054), classified `unreachable`.
+- Windows echo with TTL < path length returns `IP_TTL_EXPIRED_TRANSIT` from the router with RTT: a hop that answers is an ok sample; only a timeout is hop loss.
+- The Bash tool breaks heredocs with apostrophes: write scripts/files with the Write tool (scratchpad) and run them.
 
 - Go's monotonic clock on Windows reads interrupt time (0.5–15.6 ms steps): sub-ms RTTs read as 0 → use QPC (`internal/probe/qpc_windows.go`).
 - `os.Rename` on Windows replaces an existing file → `MoveFileEx(…, 0)` for "never overwrite".

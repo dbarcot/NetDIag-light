@@ -87,6 +87,7 @@ func newTestApp(consoleCount int) *testApp {
 			paths:   config.Paths{ExeDir: `C:\tools`, AppData: `C:\Users\u\AppData\Roaming`},
 			version: "1.2.3",
 			commit:  "abc1234",
+			live:    func(context.Context, *config.Config, io.Writer, string) error { return nil },
 		},
 		out: out, errOut: errOut, stdin: in, fs: fsys,
 	}
@@ -356,5 +357,52 @@ func TestSaveConfig_Usage(t *testing.T) {
 		if code := a.main(args); code != exitRuntime {
 			t.Errorf("%v: exit = %d, want 1", args, code)
 		}
+	}
+}
+
+func TestRun_StartsLiveProbingWithTheLoadedConfig(t *testing.T) {
+	t.Parallel()
+	a := newTestApp(2)
+	var gotCfg *config.Config
+	var gotLog string
+	a.live = func(_ context.Context, cfg *config.Config, out io.Writer, logPath string) error {
+		gotCfg, gotLog = cfg, logPath
+		_, _ = io.WriteString(out, "09:00:00  OK [exit 0]\n")
+		return nil
+	}
+	if code := a.main([]string{"run", "--port", "9999", "--csv", `C:\logs`, "--log", `C:\l.txt`}); code != exitOK {
+		t.Fatalf("exit %d, stderr %q", code, a.errOut)
+	}
+	if gotCfg == nil || gotCfg.UI.Port != 9999 || gotCfg.CSV.Dir != `C:\logs` || gotLog != `C:\l.txt` {
+		t.Errorf("live got cfg %+v, log %q", gotCfg, gotLog)
+	}
+	if !strings.Contains(a.out.String(), "OK [exit 0]") || strings.Contains(a.out.String(), "not implemented") {
+		t.Errorf("out = %q", a.out)
+	}
+}
+
+func TestRun_LiveErrorExitsOne(t *testing.T) {
+	t.Parallel()
+	a := newTestApp(2)
+	a.live = func(context.Context, *config.Config, io.Writer, string) error {
+		return errors.New("list adapters: boom")
+	}
+	if code := a.main([]string{"run"}); code != exitRuntime || !strings.Contains(a.errOut.String(), "list adapters: boom") {
+		t.Errorf("exit %d, stderr %q", code, a.errOut)
+	}
+}
+
+func TestRun_HeadlessIsNotImplementedYet(t *testing.T) {
+	t.Parallel()
+	a := newTestApp(2)
+	a.live = func(context.Context, *config.Config, io.Writer, string) error {
+		t.Error("headless must not start live probing yet")
+		return nil
+	}
+	if code := a.main([]string{"run", "--headless", "--duration", "30s", "--json", `C:\r.json`}); code != exitOK {
+		t.Errorf("exit %d", code)
+	}
+	if !strings.Contains(a.out.String(), "Headless mode is not implemented") {
+		t.Errorf("out = %q", a.out)
 	}
 }

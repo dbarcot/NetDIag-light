@@ -40,6 +40,13 @@ func qpcSince(start int64) time.Duration {
 	return ticksToDuration(qpcNow()-start, qpcFrequency())
 }
 
+// stopwatch returns a function reporting the time since the call, timed
+// with QueryPerformanceCounter (SPEC §5 RTT).
+func stopwatch() func() time.Duration {
+	start := qpcNow()
+	return func() time.Duration { return qpcSince(start) }
+}
+
 // ticksToDuration converts counter ticks without overflow for any
 // realistic probe duration.
 func ticksToDuration(ticks, freq int64) time.Duration {

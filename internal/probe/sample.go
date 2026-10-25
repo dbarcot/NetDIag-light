@@ -26,6 +26,8 @@ const (
 	ClassCaptive      = "captive"     // HTTP-01: redirect or wrong status/body (captive portal)
 	ClassDNS          = "dns"         // the probe's target name did not resolve
 	ClassUnconfirmed  = "unconfirmed" // LAN-02: only a stale/probe/delay ARP entry
+	ClassRefused      = "refused"     // TCP connection actively refused (RST): the host answered, the port is closed
+	ClassTLS          = "tls"         // SVC-01: TLS handshake or certificate failure
 )
 
 // Sample is one immutable measurement. Probes fill the outcome fields; the
@@ -36,11 +38,12 @@ type Sample struct {
 	Probe    string    // probe ID, e.g. "NET-01"
 	Target   string
 	Result   Result
-	RTT      time.Duration // ok only
-	Value    float64       // probe-specific value (CPU % for SYS-01)
-	From     netip.Addr    // responder, e.g. a trace hop
-	ErrClass string        // failures only
-	Detail   string        // error detail or "skipped: <reason>"
+	RTT      time.Duration  // ok only
+	Value    float64        // probe-specific value (CPU % for SYS-01)
+	From     netip.Addr     // responder (trace hop) or the address a hostname target resolved to
+	Mapped   netip.AddrPort // STUN: our public address as the server saw it
+	ErrClass string         // failures only
+	Detail   string         // error detail or "skipped: <reason>"
 	// Recovery marks a NET-04 run taken while L3 is not open (SPEC §6 L3
 	// recovery): it is L3 evidence only, never L4 evidence, and it is left
 	// out of loss and RTT statistics like a skipped sample.

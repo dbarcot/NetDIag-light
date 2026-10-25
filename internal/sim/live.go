@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"time"
 
@@ -67,7 +66,7 @@ func Live(ctx context.Context, sc *Scenario, c clock.Clock, out io.Writer) (engi
 	var last string
 	report := func(prefix string) {
 		snap := eng.Snapshot()
-		line := describe(snap)
+		line := engine.Describe(snap)
 		if line != last || prefix != "" {
 			fmt.Fprintf(out, "%s  %s%s\n", snap.Time.Local().Format("15:04:05"), prefix, line)
 			last = line
@@ -92,21 +91,6 @@ func Live(ctx context.Context, sc *Scenario, c clock.Clock, out io.Writer) (engi
 	eng.Tick()
 	report("end of simulation: ")
 	return eng.Snapshot(), nil
-}
-
-// describe is the one-line state: verdict, detail, exit code and flags.
-func describe(s engine.Snapshot) string {
-	r := s.Result
-	var b strings.Builder
-	b.WriteString(string(r.Verdict))
-	if r.Detail != "" {
-		fmt.Fprintf(&b, " (%s)", r.Detail)
-	}
-	fmt.Fprintf(&b, " [exit %d]", r.ExitCode)
-	if len(r.Flags) > 0 {
-		b.WriteString("  flags: " + strings.Join(r.Flags, " "))
-	}
-	return b.String()
 }
 
 // sleepUntil waits on the clock until t; false if ctx ended first.

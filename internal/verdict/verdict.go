@@ -4,6 +4,7 @@ package verdict
 
 import (
 	"fmt"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -77,6 +78,7 @@ func (v Verdict) Rank() int {
 const (
 	FlagGWICMPBlocked         = "GW_ICMP_BLOCKED"
 	FlagGWICMPRateLimited     = "GW_ICMP_RATE_LIMITED"
+	FlagHTTPCheckFiltered     = "HTTP_CHECK_FILTERED" // ":<host>" appended
 	FlagICMPBlocked           = "ICMP_BLOCKED"
 	FlagSymmetricNAT          = "SYMMETRIC_NAT"
 	FlagWiFiWeak              = "WIFI_WEAK"
@@ -444,13 +446,26 @@ func (e *eval) primary(failing, lastOK func(SeriesData) bool, net04OK, icmpBlock
 	return OK, ""
 }
 
-// captive reports whether the newest result of any HTTP-01 check is a
-// redirect or a status/body mismatch.
+func isCaptive(s SeriesData) bool {
+	l, ok := s.Last()
+	return ok && l.ErrClass == probe.ClassCaptive
+}
+
+// captive reports a captive portal: the newest result of at least one
+// HTTP-01 check is a redirect or a status/body mismatch and no check's
+// newest result is ok. One check redirected while another passes is a web
+// filter, not a portal (SPEC §8, HTTP_CHECK_FILTERED).
 func (e *eval) captive() bool {
-	return anyOf(e.probe("HTTP-01"), func(s SeriesData) bool {
-		l, ok := s.Last()
-		return ok && l.ErrClass == probe.ClassCaptive
-	})
+	return anyOf(e.probe("HTTP-01"), isCaptive) && !anyOf(e.probe("HTTP-01"), SeriesData.LastOK)
+}
+
+// urlHost returns the host of an HTTP check URL (the whole string if it
+// does not parse).
+func urlHost(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Hostname() != "" {
+		return u.Hostname()
+	}
+	return raw
 }
 
 // quality picks the call-quality source (SPEC §5 MEDIA-01 note) and rates
@@ -503,6 +518,11 @@ func (e *eval) flags(failing func(SeriesData) bool, gwICMPBlocked, gwRateLimited
 	th := e.in.Thresholds
 	add(gwICMPBlocked, FlagGWICMPBlocked)
 	add(gwRateLimited, FlagGWICMPRateLimited)
+	if http := e.probe("HTTP-01"); anyOf(http, SeriesData.LastOK) {
+		for _, s := range http {
+			add(isCaptive(s), FlagHTTPCheckFiltered+":"+urlHost(s.Target))
+		}
+	}
 	add(icmpBlocked, FlagICMPBlocked)
 	add(anyOf(e.probe("NAT-01"), func(s SeriesData) bool {
 		l, ok := s.Last()

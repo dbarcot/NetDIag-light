@@ -37,6 +37,9 @@ type app struct {
 	paths          config.Paths
 	version        string
 	commit         string
+	// live runs the real probes until ctx ends, printing the plain output
+	// to out (real: realLive; tests swap in a stub).
+	live func(ctx context.Context, cfg *config.Config, out io.Writer, logPath string) error
 }
 
 // main runs one command and returns the process exit code. After help or
@@ -220,7 +223,15 @@ func (a *app) run(args []string) (int, bool) {
 	}
 
 	fmt.Fprintf(a.stdout, "netdiag %s\nConfig: %s\n", a.version, source)
-	fmt.Fprintln(a.stdout, "Config OK. Probing is not implemented in this build yet.")
+	if o.headless {
+		fmt.Fprintln(a.stdout, "Config OK. Headless mode is not implemented in this build yet.")
+		return exitOK, false
+	}
+	fmt.Fprintln(a.stdout, "Press Ctrl+C to stop.")
+	if err := a.live(a.ctx, cfg, a.stdout, o.logPath); err != nil {
+		fmt.Fprintf(a.stderr, "netdiag: %v\n", err)
+		return exitRuntime, false
+	}
 	return exitOK, false
 }
 
