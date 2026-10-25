@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "ui": { "port": 48765 },
+  "window": { "seconds": 60, "min_samples": 10 },
+  "history": { "minutes": 15 },
+  "gate": { "fail_count": 3, "ok_count": 3 },
+  "targets": {
+    "ping": [],
+    "tcp": [],
+    "internet_icmp": ["1.1.1.1", "8.8.8.8"],
+    "internet_tcp": "1.1.1.1:443",
+    "public_dns": ["1.1.1.1", "8.8.8.8"],
+    "dns_test_name": "www.microsoft.com",
+    "stun": ["stun.cloudflare.com:3478", "stun.l.google.com:19302"],
+    "http_check": [
+      {
+        "url": "http://www.msftconnecttest.com/connecttest.txt",
+        "expect_status": 200,
+        "expect_body": "Microsoft Connect Test"
+      },
+      {
+        "url": "http://connectivitycheck.gstatic.com/generate_204",
+        "expect_status": 204,
+        "expect_body": ""
+      }
+    ],
+    "services": ["teams.microsoft.com", "outlook.office365.com", "meet.google.com", "zoom.us"],
+    "trace": "1.1.1.1"
+  },
+  "teams": {
+    "relays": ["worldaz.tr.teams.microsoft.com"],
+    "udp_ports": [3478]
+  },
+  "meet": { "stun": ["stun.l.google.com:19302"] },
+  "rates": {
+    "link": 5,
+    "lan_ping": 1,
+    "lan_arp": 5,
+    "wifi": 2,
+    "cpu": 1,
+    "internet_icmp": 1,
+    "internet_tcp": 1,
+    "dns_system": 5,
+    "dns_public": 5,
+    "stun": 5,
+    "nat": 60,
+    "http": 15,
+    "services": 30,
+    "mtu": 600,
+    "teams_udp": 10,
+    "teams_tcp": 10,
+    "meet": 10,
+    "media": 1,
+    "src_ports": 60
+  },
+  "timeouts": {
+    "icmp": 1000,
+    "arp": 1000,
+    "tcp": 2000,
+    "dns": 2000,
+    "stun": 2000,
+    "http": 5000,
+    "tls": 5000
+  },
+  "thresholds": {
+    "loss_pct": 2,
+    "rtt_ms": 150,
+    "jitter_ms": 30,
+    "mos_min": 3.6,
+    "mos_good": 4.0,
+    "mtu_min": 1400,
+    "wifi_signal_pct": 50,
+    "cpu_moderate_pct": 50,
+    "cpu_high_pct": 75,
+    "cpu_heavy_pct": 90
+  },
+  "console": { "sparkline": true },
+  "trace": { "max_hops": 30, "reverse_dns": true, "interval_ms": 200 },
+  "limits": { "max_custom_targets": 20 },
+  "csv": {
+    "dir": "",
+    "separator": ";",
+    "decimal": ",",
+    "bom": true,
+    "summary_seconds": 60,
+    "rotate": "daily",
+    "max_mb": 100
+  }
+}

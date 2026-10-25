@@ -1,0 +1,3 @@
+// Compiled into rsrc_windows_amd64.syso with: go generate ./cmd/netdiag
+// 1 = CREATEPROCESS_MANIFEST_RESOURCE_ID, 24 = RT_MANIFEST
+1 24 "netdiag.manifest"
