@@ -53,6 +53,7 @@ internal/sysapi/      interfaces for OS info + Windows implementations + fakes
                       (adapters, gateway/best route, ARP, DNS servers, Wi-Fi, console)
 internal/probe/       probe interface + implementations (icmp, tcp, dns, stun, http,
                       tls, mtu, trace) + fakes
+internal/clock/       Clock interface (Now, timers, tickers), real clock, manual fake
 internal/sched/       scheduler: rates, start jitter, gate-aware pausing
 internal/store/       ring buffers per series, rolling-window stats
 internal/stats/       pure math: loss, jitter (RFC 3550), stdev, E-model MOS

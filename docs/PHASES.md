@@ -60,8 +60,8 @@ Rules (from `CLAUDE.md`): finish phases in order; tests are written during the p
 - Integration: ICMP to `127.0.0.1` and to gateway succeed; RTT > 0; unreachable TEST-NET address (`192.0.2.1`) reports fail within timeout.
 
 **Acceptance**
-- [ ] Stats math verified by tests, not by eye
-- [ ] Scheduler deterministic under fake clock
+- [x] Stats math verified by tests, not by eye
+- [x] Scheduler deterministic under fake clock
 
 ---
 

@@ -24,7 +24,8 @@ Every OS/network boundary has an interface and a fake in the same package (`fake
 - Hand-written Win32 structs (`MIB_IPNET_ROW2`, `INPUT_RECORD`, WLAN structs) have size/offset tests
 - Real console modes are tested by re-running the test binary in a new hidden console (`CREATE_NEW_CONSOLE`), which also checks double-click detection (process count 1)
 - `probe.ICMP` (send echo with TTL/DF/size), `probe.Dialer` (TCP), `probe.Resolver` (system DNS)
-- `clock.Clock` (`Now`, `NewTimer`, `NewTicker`) with a manual fake that advances explicitly
+- `clock.Clock` (`Now`, `NewTimer`, `NewTicker`) with a manual fake (`clock.Fake`) that advances explicitly; `WaitTimers(n)` lets a test wait until the goroutines under test are parked on the clock before advancing, so scheduler tests are deterministic
+- `probe.ICMP` fake (`probe.FakeICMP`) for probe classification and the timer-overhead baseline; the real `WinICMP` is covered by integration tests (loopback, gateway, TEST-NET timeout, TTL 1 expiry at the gateway, full-size DF probe never a local buffer error)
 
 Prefer real loopback servers over fakes where cheap: `httptest.Server` for HTTP, an in-test UDP STUN responder (built with pion/stun/v3), an in-test miekg/dns server, `net.Listen("tcp", "127.0.0.1:0")` for TCP.
 

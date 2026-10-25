@@ -187,7 +187,7 @@ Redirects are **not** followed; a redirect (3xx) or a status/body mismatch from 
 | CUST-* | custom ping/TCP | `targets.ping`, `targets.tcp` | ICMP / TCP | per target |
 
 Notes:
-- **RTT:** measured with Go's monotonic clock around each `IcmpSendEcho2` call. The API's `RoundTripTime` is whole milliseconds and is `0` for sub-millisecond replies (typical for the gateway), so it is not used as the value; it is only a sanity check (API value > 0 and Go value < API value − 1 ms → log a warning). The Go measurement includes Windows call and scheduling overhead (roughly up to 0.5 ms). At startup, measure a loopback baseline (10 pings to `127.0.0.1`, take the minimum) and show it as "timer overhead" in the console and web system info. Do not subtract it from RTTs; it only helps interpret sub-ms LAN values. Display RTT with one decimal place.
+- **RTT:** measured with `QueryPerformanceCounter` around each `IcmpSendEcho2` call (and around every other timed probe operation). Go's monotonic clock is **not** used: on Windows it reads the interrupt time, which only advances on timer interrupts (0.5–15.6 ms), so sub-millisecond replies would read as 0 (seen on the dev machine: loopback 0 s with the Go clock, 0.33 ms with QPC). The API's `RoundTripTime` is whole milliseconds and is `0` for sub-millisecond replies (typical for the gateway), so it is not used as the value; it is only a sanity check (API value > 0 and measured value < API value − 1 ms → log a warning). The measurement includes Windows call and scheduling overhead (roughly up to 0.5 ms). At startup, measure a loopback baseline (10 pings to `127.0.0.1`, take the minimum) and show it as "timer overhead" in the console and web system info. Do not subtract it from RTTs; it only helps interpret sub-ms LAN values. Display RTT with one decimal place.
 - **ICMP reply buffer:** allocate at least `sizeof(ICMP_ECHO_REPLY) + RequestSize + 8` bytes plus room for an ICMP error message (use `RequestSize + 8 + sizeof(ICMP_ECHO_REPLY) + 32`, minimum 256 bytes). A too-small buffer makes the API return a local buffer error (`ERROR_INSUFFICIENT_BUFFER` / `IP_BUF_TOO_SMALL`) instead of the real status, which breaks MTU-01. MTU-01 treats `IP_PACKET_TOO_BIG` and a DF timeout as "too big" and any local buffer error as a bug (logged, probe fails, never interpreted as an MTU result).
 - **TRC-01 pacing:** send one probe every 200 ms, cycling TTL 1 → N, where N is the TTL at which the destination answered (initially `trace.max_hops`, then the discovered length + 1). A 15-hop path is therefore refreshed every ~3 s, and the total trace load never exceeds 5 packets/s. Each hop is its own series. Interval key: `trace.interval_ms` (default 200, minimum 100).
 - **WIFI-01 and Windows location privacy:** on Windows 11 (24H2 and later), `WlanQueryInterface`/WLAN scan data may return `ERROR_ACCESS_DENIED` for SSID/BSSID when Location Services for desktop apps are off. This is not an error: show `Wi-Fi: SSID hidden (Windows location privacy)` and display whatever fields are still available (signal %, RSSI, band, channel). Never crash, never count it as a probe failure. If no Wi-Fi field is available at all, show `Wi-Fi: details unavailable` and skip `WIFI_WEAK`/`WIFI_24GHZ`.
@@ -203,7 +203,8 @@ Notes:
 - **ICMP defaults:** 32-byte payload, TTL 128 (except TRC-01), DF off (except MTU-01).
 - **Series and rate limit:** a *series* is one probe ID to one endpoint (e.g. NET-01 → 1.1.1.1, NET-04 → 1.1.1.1:443, TRC-01 hop 3). The "1 probe/s" rule applies per series; different probe IDs to the same host are separate series.
 - Never more than one probe in flight per series.
-- Probe start times get a small random offset so probes don't fire in bursts.
+- Probe start times get a small random offset so probes don't fire in bursts: uniform in [0, min(interval, 1 s)), then every run is on that series' fixed grid (start + offset + k·interval). Missed grid slots (a run longer than the interval) are dropped, not caught up.
+- A run interrupted by shutdown produces no sample (a quit is not a failure).
 
 ## 6. Dependency gates
 
@@ -234,7 +235,7 @@ Rules:
 
 - **Loss %:** failed / (ok + failed) in the rolling window. Skipped excluded.
 - **Jitter:** RFC 3550 smoothed interarrival jitter over consecutive RTTs (`J += (|D| - J) / 16`). Labelled "jitter (RFC 3550)" in the UI.
-- **Per-target stats:** Loss%, Sent, Last, Avg, Best, Worst, StDev, Jitter — same window in console, web and report.
+- **Per-target stats:** Loss%, Sent, Last, Avg, Best, Worst, StDev, Jitter — same window in console, web and report. Sent = ok + failed (skipped samples are not sent). Last = RTT of the newest ok sample. StDev is the population standard deviation (÷ n, as mtr). Window jitter runs the RFC 3550 estimator over the window's ok RTTs in order, starting at 0. A sample exactly `window.seconds` old has left the window.
 - **MOS:** simplified E-model from the MEDIA-01 series (fallback: NET-01 to `1.1.1.1`): effective latency = avg RTT + 2·jitter + 10; R = 93.2 − (eff/40 if eff < 160 else (eff − 120)/10) − 2.5·loss%; MOS = 1 + 0.035R + 7·10⁻⁶·R(R − 60)(100 − R), clamped 1–4.5.
 - **Hop loss:** loss at an intermediate hop that does not continue to the final hop is displayed dimmed and ignored by verdicts.
 
