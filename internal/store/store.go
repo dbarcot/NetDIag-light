@@ -115,6 +115,35 @@ func (s *Store) Reset() {
 	}
 }
 
+// ResetSeries clears the samples of the given series (an adapter change
+// starts new series, SPEC §6). The series stay registered; unknown IDs are
+// ignored.
+func (s *Store) ResetSeries(ids []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, id := range ids {
+		if r, ok := s.series[id]; ok {
+			r.clear()
+		}
+	}
+}
+
+// Retain removes every series whose ID is not in ids: series of a previous
+// generation (old DNS servers, old trace hops) must not linger.
+func (s *Store) Retain(ids []string) {
+	keep := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		keep[id] = true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id := range s.series {
+		if !keep[id] {
+			delete(s.series, id)
+		}
+	}
+}
+
 // ring is a fixed-capacity FIFO that overwrites its oldest element.
 type ring struct {
 	buf   []probe.Sample

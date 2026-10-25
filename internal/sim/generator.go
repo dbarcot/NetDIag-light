@@ -37,6 +37,7 @@ type effective struct {
 	detail   string
 	pattern  string
 	patFrom  int
+	bound    string
 }
 
 // probeDefaults are the values a probe reports when no rule sets them.
@@ -93,6 +94,9 @@ func (e *effective) apply(r Rule) {
 	}
 	if r.Detail != "" {
 		e.detail = r.Detail
+	}
+	if r.Bound != "" {
+		e.bound = r.Bound
 	}
 	if r.Pattern != "" {
 		e.pattern = r.Pattern
@@ -158,6 +162,12 @@ func (g *Generator) Sample(sp engine.Spec, t int) probe.Sample {
 		s.RTT = time.Duration(ms * float64(time.Millisecond))
 		if e.value != nil {
 			s.Value = *e.value
+		}
+		if sp.Probe == "MTU-01" && s.Value < probe.MaxMTU {
+			s.Bound = e.bound
+			if s.Bound == "" {
+				s.Bound = probe.BoundSignalled
+			}
 		}
 	case "skipped":
 		reason := e.detail

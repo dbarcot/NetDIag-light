@@ -1,0 +1,19 @@
+{
+  "name": "mtu_reduced_pppoe",
+  "description": "PPPoE link: the path MTU is 1492 and the router says 'packet too big' (signalled bound): information only, no MTU_ISSUE; a VPN-like 1280 is also only a flag",
+  "duration_s": 60,
+  "config": { "rates": { "mtu": 10 } },
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [
+    { "probe": "MTU-01", "target": "1.1.1.1", "value": 1492, "bound": "signalled" },
+    { "probe": "MTU-01", "target": "1.1.1.1", "from_s": 30, "value": 1280, "bound": "signalled" }
+  ],
+  "expect": [
+    { "at_s": 20, "verdict": "OK", "exit_code": 0, "flags_include": ["MTU_REDUCED:1492"] },
+    { "at_s": 55, "verdict": "OK", "flags_include": ["MTU_REDUCED:1280"], "flags_exclude": ["MTU_REDUCED:1492"] }
+  ]
+}

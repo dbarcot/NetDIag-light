@@ -82,6 +82,20 @@ func TestEvaluate_OutageOnsetIsNotLossOrICMPBlock(t *testing.T) {
 	}
 }
 
+// mtuRuns builds an MTU-01 series from confirmed runs (value, bound).
+func mtuRuns(id, bound string, mtus ...float64) SeriesData {
+	s := series(id, "o", 1)
+	s.Recent = nil
+	for _, m := range mtus {
+		b := bound
+		if m >= 1500 {
+			b = ""
+		}
+		s.Recent = append(s.Recent, probe.Sample{Series: id, Result: probe.OK, Value: m, Bound: b})
+	}
+	return s
+}
+
 func value(id string, v float64) SeriesData {
 	s := series(id, "o", 1)
 	s.Recent[0].Value = v
@@ -235,8 +249,13 @@ func TestEvaluate_NetworkVerdicts(t *testing.T) {
 			series("TEAMS-01:relay:3478", "ooo", 20), series("TEAMS-01:relay:3479", "ooo", 20),
 			series("TEAMS-01:relay:3480", "fff", 0), series("TEAMS-01:relay:3481", "ooo", 20)), TeamsPartialPorts, "3480 video"},
 		{"Meet UDP blocked", with(h, series("MEET-01:stun.l.google.com:19302", "fff", 0)), MeetUDPBlocked, ""},
-		{"MTU issue", with(h, value("MTU-01:1.1.1.1", 1380)), MTUIssue, "path MTU 1380 to 1.1.1.1"},
-		{"MTU at the threshold is fine", with(h, value("MTU-01:1.1.1.1", 1400)), OK, ""},
+		{"MTU black hole: two silent low runs", with(h, mtuRuns("MTU-01:1.1.1.1", probe.BoundSilent, 1380, 1380)), MTUIssue, "path MTU 1380 to 1.1.1.1 (larger packets are dropped silently)"},
+		{"a single low run is nothing yet", with(h, mtuRuns("MTU-01:1.1.1.1", probe.BoundSilent, 1380)), OK, ""},
+		{"a good run in between breaks the series", with(h, mtuRuns("MTU-01:1.1.1.1", probe.BoundSilent, 1380, 1500)), OK, ""},
+		{"low then recovered then low is not consecutive", with(h, mtuRuns("MTU-01:1.1.1.1", probe.BoundSilent, 1380, 1500, 1380)), OK, ""},
+		{"signalled low MTU is no problem", with(h, mtuRuns("MTU-01:1.1.1.1", probe.BoundSignalled, 1280, 1280)), OK, ""},
+		{"MTU at the threshold is fine", with(h, mtuRuns("MTU-01:1.1.1.1", probe.BoundSilent, 1400, 1400)), OK, ""},
+		{"one target black hole is enough", with(h, mtuRuns("MTU-01:gateway", probe.BoundSilent, 1500, 1500), mtuRuns("MTU-01:1.1.1.1", probe.BoundSilent, 1300, 1300)), MTUIssue, "path MTU 1300 to 1.1.1.1 (larger packets are dropped silently)"},
 		{"LAN loss", with(h, series("LAN-01:gateway", lossy, 1), series("NET-01:1.1.1.1", lossy, 12), series("NET-01:8.8.8.8", lossy, 13)), LANLoss, ""},
 		{"LAN loss: internet loss at half the LAN loss", with(h, series("LAN-01:gateway", "oooofoooofoooofoooof", 1),
 			series("NET-01:1.1.1.1", lossy, 12), series("NET-01:8.8.8.8", lossy, 13)), LANLoss, ""},
@@ -246,7 +265,7 @@ func TestEvaluate_NetworkVerdicts(t *testing.T) {
 		{"loss below min_samples is not judged", with(h, series("LAN-01:gateway", "oof", 1)), OK, ""},
 		{"poor VoIP: high RTT", with(h, series("MEDIA-01:teams", okRun, 200)), QualityPoorVoIP, "MEDIA-01:teams"},
 		// priorities
-		{"UDP blocked outranks MTU", with(h, series("RT-01:stun.cloudflare.com:3478", "fff", 0), series("RT-01:stun.l.google.com:19302", "fff", 0), value("MTU-01:1.1.1.1", 1300)), UDPBlocked, ""},
+		{"UDP blocked outranks MTU", with(h, series("RT-01:stun.cloudflare.com:3478", "fff", 0), series("RT-01:stun.l.google.com:19302", "fff", 0), mtuRuns("MTU-01:1.1.1.1", probe.BoundSilent, 1300, 1300)), UDPBlocked, ""},
 		{"LAN loss outranks ISP loss", with(h, series("LAN-01:gateway", lossy, 1), series("NET-01:1.1.1.1", lossy, 12), series("NET-01:8.8.8.8", lossy, 13)), LANLoss, ""},
 		{"captive outranks UDP blocked", with(h, series("HTTP-01:http://www.msftconnecttest.com/connecttest.txt", "c", 0), series(gstatic, "c", 0), series("RT-01:stun.cloudflare.com:3478", "fff", 0), series("RT-01:stun.l.google.com:19302", "fff", 0)), CaptivePortal, ""},
 		// exclusions
@@ -304,6 +323,8 @@ func TestEvaluate_Flags(t *testing.T) {
 		{"gateway ignores ping, ARP reachable", with(h, series("LAN-01:gateway", "fff", 0)), FlagGWICMPBlocked},
 		{"internet ignores ping, TCP works", with(h, series("NET-01:1.1.1.1", "fff", 0), series("NET-01:8.8.8.8", "fff", 0)), FlagICMPBlocked},
 		{"symmetric NAT", with(h, value("NAT-01", 1)), FlagSymmetricNAT},
+		{"reduced MTU with a signalled bound", with(h, mtuRuns("MTU-01:1.1.1.1", probe.BoundSignalled, 1492)), FlagMTUReduced + ":1492"},
+		{"reduced MTU, low and signalled: still only a flag", with(h, mtuRuns("MTU-01:1.1.1.1", probe.BoundSignalled, 1280, 1280)), FlagMTUReduced + ":1280"},
 		{"weak Wi-Fi", func() Input { i := h; i.WiFi = &sysapi.WiFiStatus{SignalPct: &weak}; return i }(), FlagWiFiWeak},
 		{"2.4 GHz by frequency", func() Input {
 			i := h

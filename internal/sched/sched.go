@@ -128,6 +128,12 @@ func (s *Scheduler) loop(ctx context.Context, sr Series, next time.Time, sink fu
 		sm.Time, sm.Series, sm.Probe, sm.Target = now, sr.ID, sr.Probe, sr.Target
 		sink(sm)
 		next = nextSlot(next, sr.Interval, s.clock.Now())
+		if sm.RerunAfter > 0 {
+			// an early re-run (MTU-01); the grid restarts from it
+			if early := s.clock.Now().Add(sm.RerunAfter); early.Before(next) {
+				next = early
+			}
+		}
 	}
 }
 

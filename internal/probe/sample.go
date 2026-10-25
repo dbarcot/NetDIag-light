@@ -48,6 +48,13 @@ type Sample struct {
 	// recovery): it is L3 evidence only, never L4 evidence, and it is left
 	// out of loss and RTT statistics like a skipped sample.
 	Recovery bool
+	// Bound is MTU-01 only: how the upper bound of the result was found,
+	// BoundSignalled or BoundSilent (empty at 1500).
+	Bound string
+	// RerunAfter, if positive, asks the scheduler to run the probe again
+	// after this long instead of at its next grid slot (MTU-01 after its
+	// first confirmed low result).
+	RerunAfter time.Duration
 }
 
 // RTTms returns the RTT in milliseconds.

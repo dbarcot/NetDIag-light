@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -233,5 +234,59 @@ func TestTLSProbe(t *testing.T) {
 	p.Host, p.Dial = "example.com", dialTo(closedPort(t), &asked)
 	if s = p.Run(context.Background()); s.Result != Fail || s.ErrClass != ClassRefused {
 		t.Errorf("refused: %+v", s)
+	}
+}
+
+// A name with several A records is tried address by address within the one
+// timeout: a dead first address must not fail the service (SVC-01).
+func TestTLSProbe_TriesEveryResolvedAddress(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+	pool := srv.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
+	_, port, _ := net.SplitHostPort(srv.Listener.Addr().String())
+	dead, alive := netip.MustParseAddr("192.0.2.1"), netip.MustParseAddr("127.0.0.1")
+	res := &FakeResolver{}
+	res.Set("example.com", dead, alive)
+
+	var asked []string
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		asked = append(asked, addr)
+		if strings.HasPrefix(addr, "192.0.2.") { // TEST-NET: nothing there
+			return nil, &net.OpError{Op: "dial", Err: wsaeHostUnreach}
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+	}
+	p := TLSProbe{Resolver: res, Host: "example.com", Port: port, Timeout: 2 * time.Second, RootCAs: pool, Dial: dial}
+	s := p.Run(context.Background())
+	if s.Result != OK || s.From != alive {
+		t.Errorf("got %+v, want ok via the second address", s)
+	}
+	if len(asked) != 2 || !strings.HasPrefix(asked[0], dead.String()) || !strings.HasPrefix(asked[1], alive.String()) {
+		t.Errorf("dialed %v, want the dead address first, then the live one", asked)
+	}
+
+	// every address fails: the last failure is reported
+	res.Set("example.com", dead, netip.MustParseAddr("192.0.2.2"))
+	asked = nil
+	s = p.Run(context.Background())
+	if s.Result != Fail || s.ErrClass != ClassUnreachable || s.From != netip.MustParseAddr("192.0.2.2") || len(asked) != 2 {
+		t.Errorf("all dead: %+v after %v", s, asked)
+	}
+
+	// a good first address does not try the second
+	res.Set("example.com", alive, dead)
+	asked = nil
+	if s = p.Run(context.Background()); s.Result != OK || len(asked) != 1 {
+		t.Errorf("first address works: %+v after %v", s, asked)
+	}
+
+	// the whole list shares the one timeout
+	res.Set("example.com", dead, alive)
+	hang := func(ctx context.Context, _, _ string) (net.Conn, error) { <-ctx.Done(); return nil, ctx.Err() }
+	p.Dial, p.Timeout = hang, 80*time.Millisecond
+	start := time.Now()
+	if s = p.Run(context.Background()); s.Result != Fail || s.ErrClass != ClassTimeout || time.Since(start) > time.Second {
+		t.Errorf("hanging dial: %+v after %v", s, time.Since(start))
 	}
 }

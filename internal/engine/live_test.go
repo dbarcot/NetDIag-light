@@ -30,7 +30,7 @@ func TestBuildProbe_TypesAndTargets(t *testing.T) {
 		"SYS-01": "*probe.CPUProbe", "LAN-01": "probe.ICMPProbe", "LAN-02": "probe.ARPProbe",
 		"NET-01": "probe.ICMPProbe", "NET-04": "probe.TCPProbe", "RT-01": "probe.STUNProbe",
 		"NAT-01": "probe.NATProbe", "DNS-01": "probe.DNSProbe", "DNS-02": "probe.DNSProbe",
-		"HTTP-01": "probe.HTTPProbe", "SVC-01": "probe.TLSProbe", "MTU-01": "probe.MTUProbe",
+		"HTTP-01": "probe.HTTPProbe", "SVC-01": "probe.TLSProbe", "MTU-01": "*probe.MTUProbe",
 		"CUST-ICMP": "probe.HostICMPProbe", "CUST-TCP": "probe.TCPProbe",
 	}
 	got := map[string]bool{}
@@ -239,12 +239,13 @@ func TestRunLive_AdapterChangeRebuildsSeries(t *testing.T) {
 	f := newLiveFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	done := make(chan struct{})
+	done := make(chan Snapshot, 1)
 	go func() {
-		if _, err := RunLive(ctx, f.opts); err != nil {
+		snap, err := RunLive(ctx, f.opts)
+		if err != nil {
 			t.Error(err)
 		}
-		close(done)
+		done <- snap
 	}()
 	waitFor(t, "first generation", func() bool { return len(f.script.built()) == 1 })
 
@@ -258,9 +259,24 @@ func TestRunLive_AdapterChangeRebuildsSeries(t *testing.T) {
 	if g := f.script.built(); g[0] != "192.168.1.1" || g[1] != "10.0.0.1" {
 		t.Errorf("gateways pinged: %v", g)
 	}
-	waitFor(t, "OK on the new adapter", func() bool { return strings.Count(f.out.String(), "OK [exit 0]") >= 1 })
+	waitFor(t, "the adapter change line", func() bool {
+		return strings.Contains(f.out.String(), "adapter change: Wi-Fi 192.168.1.23 gateway 192.168.1.1 -> Ethernet 10.0.0.5 gateway 10.0.0.1")
+	})
+	waitFor(t, "OK on the new adapter", func() bool {
+		out := f.out.String()
+		return strings.Contains(out[strings.Index(out, "adapter change"):], "OK [exit 0]")
+	})
 	cancel()
-	<-done
+	snap := <-done
+	// nothing of the old adapter is left: no series for its DNS server, no stale rows
+	for _, sp := range snap.Specs {
+		if sp.ID == "DNS-01:192.168.1.1" {
+			t.Errorf("series %s of the old adapter survived", sp.ID)
+		}
+	}
+	if snap.AdapterChanges != 1 || len(snap.AdapterEvents) != 1 {
+		t.Errorf("changes %d, events %v", snap.AdapterChanges, snap.AdapterEvents)
+	}
 }
 
 func TestRunLive_FailsWithoutAdapters(t *testing.T) {

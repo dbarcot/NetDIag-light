@@ -73,11 +73,11 @@ func TestReal_ServicesTLS(t *testing.T) {
 
 func TestReal_MTU(t *testing.T) {
 	gw := gateway(t)
-	s := realRun(t, MTUProbe{ICMP: WinICMP{}, Resolver: SystemResolver{}, Host: gw.String(), Timeout: time.Second})
+	s := realRun(t, &MTUProbe{ICMP: WinICMP{}, Resolver: SystemResolver{}, Host: gw.String(), Timeout: time.Second})
 	if s.Result != OK || s.Value < MinMTU || s.Value > MaxMTU {
 		t.Errorf("MTU-01 to the gateway: %+v", s)
 	}
-	s = realRun(t, MTUProbe{ICMP: WinICMP{}, Resolver: SystemResolver{}, Host: "1.1.1.1", Timeout: time.Second})
+	s = realRun(t, &MTUProbe{ICMP: WinICMP{}, Resolver: SystemResolver{}, Host: "1.1.1.1", Timeout: time.Second})
 	if s.Result != OK || s.Value < MinMTU || s.Value > MaxMTU {
 		t.Errorf("MTU-01 to 1.1.1.1: %+v", s)
 	}

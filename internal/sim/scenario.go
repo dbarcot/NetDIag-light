@@ -11,6 +11,7 @@ import (
 
 	"netdiag/internal/config"
 	"netdiag/internal/engine"
+	"netdiag/internal/probe"
 	"netdiag/internal/sysapi"
 )
 
@@ -44,6 +45,7 @@ type Rule struct {
 	ARPState string    `json:"arp_state"` // LAN-02 only
 	Value    *float64  `json:"value"`     // MTU-01 MTU, SYS-01 CPU %, NAT-01 1 = symmetric
 	ErrClass string    `json:"err_class"`
+	Bound    string    `json:"bound"` // MTU-01: signalled (default) or silent
 	Detail   string    `json:"detail"`
 	// Pattern is a per-second sequence of o (ok), f (fail), s (skipped),
 	// c (captive), repeated from from_s.
@@ -159,6 +161,9 @@ func (sc *Scenario) validate() error {
 		}
 		if !slices.Contains(results, r.Result) {
 			return fmt.Errorf("%s: unknown result %q", where, r.Result)
+		}
+		if !slices.Contains([]string{"", probe.BoundSignalled, probe.BoundSilent}, r.Bound) {
+			return fmt.Errorf("%s: unknown bound %q", where, r.Bound)
 		}
 		if !slices.Contains(arpStates, r.ARPState) {
 			return fmt.Errorf("%s: unknown arp_state %q", where, r.ARPState)

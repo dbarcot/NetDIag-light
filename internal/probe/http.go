@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 )
@@ -125,10 +126,27 @@ func (p TLSProbe) Run(ctx context.Context) Sample {
 	if dial == nil {
 		dial = (&net.Dialer{}).DialContext
 	}
-	conn, err := dial(ctx, "tcp4", net.JoinHostPort(ips[0].String(), port))
+	// every resolved address is tried in order within the one timeout, like
+	// TCPProbe: a dead first address of a multi-A name must not fail the check
+	var last Sample
+	for _, ip := range ips {
+		last = p.handshake(ctx, dial, ip, port)
+		if last.Result == OK || ctx.Err() != nil {
+			break
+		}
+	}
+	if last.Result == OK {
+		last.Detail = fmt.Sprintf("DNS %.1f ms", float64(dnsTime)/float64(time.Millisecond))
+	}
+	return last
+}
+
+// handshake opens a connection to one address and times the TLS handshake.
+func (p TLSProbe) handshake(ctx context.Context, dial DialFunc, ip netip.Addr, port string) Sample {
+	conn, err := dial(ctx, "tcp4", net.JoinHostPort(ip.String(), port))
 	if err != nil {
 		class, detail := ClassifyNetError(err)
-		return Sample{Result: Fail, ErrClass: class, Detail: detail, From: ips[0]}
+		return Sample{Result: Fail, ErrClass: class, Detail: detail, From: ip}
 	}
 	defer func() { _ = conn.Close() }()
 	tc := tls.Client(conn, &tls.Config{ServerName: p.Host, RootCAs: p.RootCAs, MinVersion: tls.VersionTLS12})
@@ -138,8 +156,7 @@ func (p TLSProbe) Run(ctx context.Context) Sample {
 		if class == ClassOther {
 			class = ClassTLS
 		}
-		return Sample{Result: Fail, ErrClass: class, Detail: "TLS: " + detail, From: ips[0]}
+		return Sample{Result: Fail, ErrClass: class, Detail: "TLS: " + detail, From: ip}
 	}
-	return Sample{Result: OK, RTT: elapsed(), From: ips[0],
-		Detail: fmt.Sprintf("DNS %.1f ms", float64(dnsTime)/float64(time.Millisecond))}
+	return Sample{Result: OK, RTT: elapsed(), From: ip}
 }

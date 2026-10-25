@@ -45,6 +45,8 @@ type Snapshot struct {
 	Specs          []Spec
 	// Hops are the TRC-01 hops seen so far (empty before the first trace).
 	Hops []probe.Hop
+	// AdapterEvents are the adapter changes of the run.
+	AdapterEvents []AdapterChange
 }
 
 // Engine is safe for concurrent use: the scheduler's series goroutines
@@ -65,6 +67,59 @@ type Engine struct {
 	adapterChanges int
 	csvErr         bool
 	hops           func() []probe.Hop
+	generation     int // bumped by every adapter change
+	events         []AdapterChange
+}
+
+// AdapterInfo describes the primary adapter for the change event.
+type AdapterInfo struct {
+	Name    string
+	IPv4    string // first address, "" if none
+	Gateway string // IP, "on-link" or "" (no default route)
+}
+
+// AdapterChange is the recorded "adapter_change" event (SPEC §6): shown in
+// the plain output now, in the CSV events and as a graph marker later.
+type AdapterChange struct {
+	Time     time.Time
+	From, To AdapterInfo
+}
+
+func (a AdapterChange) String() string {
+	return fmt.Sprintf("adapter change: %s -> %s", a.From, a.To)
+}
+
+func (i AdapterInfo) String() string {
+	name := i.Name
+	if name == "" {
+		name = "none"
+	}
+	ip := i.IPv4
+	if ip == "" {
+		ip = "no address"
+	}
+	gw := i.Gateway
+	if gw == "" {
+		gw = "no gateway"
+	}
+	return fmt.Sprintf("%s %s gateway %s", name, ip, gw)
+}
+
+func adapterInfo(p sysapi.Primary) AdapterInfo {
+	if !p.Found() {
+		return AdapterInfo{}
+	}
+	i := AdapterInfo{Name: p.Adapter.Name}
+	if len(p.Adapter.IPv4) > 0 {
+		i.IPv4 = p.Adapter.IPv4[0].Addr().String()
+	}
+	switch {
+	case p.OnLink:
+		i.Gateway = "on-link"
+	case p.Gateway.IsValid():
+		i.Gateway = p.Gateway.String()
+	}
+	return i
 }
 
 // TraceID is the gate-only series of TRC-01: the tracer asks it whether to
@@ -94,7 +149,19 @@ func (e *Engine) SetSystem(s System) {
 	p := sysapi.SelectPrimary(s.Adapters, s.Route, s.RouteErr)
 	if e.havePrimary && primaryKey(e.primary) != primaryKey(p) {
 		e.adapterChanges++
+		e.generation++
 		e.gates.Reset()
+		// New series start: nothing measured on the old path may count
+		// towards the loss and quality of the new one. Only the CPU load
+		// is a property of the machine.
+		var ids []string
+		for _, id := range e.store.IDs() {
+			if sp, ok := e.byID[id]; !ok || sp.Probe != "SYS-01" {
+				ids = append(ids, id)
+			}
+		}
+		e.store.ResetSeries(ids)
+		e.events = append(e.events, AdapterChange{Time: e.clock.Now(), From: adapterInfo(e.primary), To: adapterInfo(p)})
 	}
 	e.primary, e.havePrimary = p, true
 	e.wifi = nil
@@ -139,21 +206,54 @@ func (e *Engine) SetSeries(specs []Spec) {
 	e.specs = append([]Spec(nil), specs...)
 	e.byID = make(map[string]Spec, len(specs))
 	gs := make([]gate.Series, 0, len(specs)+1)
+	ids := make([]string, 0, len(specs))
 	for _, s := range specs {
 		e.byID[s.ID] = s
 		gs = append(gs, s.Series)
 		e.store.Register(s.ID, s.Interval)
+		ids = append(ids, s.ID)
 	}
+	e.store.Retain(ids) // series of a previous generation are gone
 	// TRC-01 runs whenever L3 is open (SPEC §6)
 	gs = append(gs, gate.Series{ID: TraceID, Interval: time.Second, Requires: gate.L3})
 	e.gates.SetSeries(gs)
 }
 
-// AddSeries adds one series after SetSeries (TRC-01 hops appear while the
-// trace runs). It does nothing if the series exists.
-func (e *Engine) AddSeries(s Spec) {
+// Generation counts the adapter changes; a run of series belongs to one
+// generation (SinkFor, AddSeriesFor).
+func (e *Engine) Generation() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.generation
+}
+
+// SinkFor returns the sample sink of one generation: samples that arrive
+// after an adapter change from probes still running for the old adapter
+// (a ping in flight) are dropped instead of polluting the new series.
+func (e *Engine) SinkFor(gen int) func(probe.Sample) {
+	return func(s probe.Sample) {
+		e.mu.Lock()
+		stale := gen != e.generation
+		e.mu.Unlock()
+		if !stale {
+			e.OnSample(s)
+		}
+	}
+}
+
+// AddSeries adds one series after SetSeries (TRC-01 hops appear while the
+// trace runs). It does nothing if the series exists.
+func (e *Engine) AddSeries(s Spec) { e.addSeries(-1, s) }
+
+// AddSeriesFor is AddSeries for a generation; a stale one is ignored.
+func (e *Engine) AddSeriesFor(gen int, s Spec) { e.addSeries(gen, s) }
+
+func (e *Engine) addSeries(gen int, s Spec) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if gen >= 0 && gen != e.generation {
+		return
+	}
 	if _, ok := e.byID[s.ID]; ok {
 		return
 	}
@@ -171,6 +271,13 @@ func (e *Engine) SetTrace(hops func() []probe.Hop) {
 
 // TraceDecision is the gate of TRC-01.
 func (e *Engine) TraceDecision() sched.Decision { return e.Decision(TraceID) }
+
+// AdapterEvents returns the recorded adapter changes, oldest first.
+func (e *Engine) AdapterEvents() []AdapterChange {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]AdapterChange(nil), e.events...)
+}
 
 // AdapterChanges counts the primary adapter changes so far.
 func (e *Engine) AdapterChanges() int {
@@ -281,6 +388,7 @@ func (e *Engine) Snapshot() Snapshot {
 	if e.hops != nil {
 		snap.Hops = e.hops()
 	}
+	snap.AdapterEvents = slices.Clone(e.events)
 	return snap
 }
 

@@ -80,7 +80,7 @@ func TestScenarios_Coverage(t *testing.T) {
 		}
 	}
 	for _, f := range []string{
-		verdict.FlagGWICMPBlocked, verdict.FlagGWICMPRateLimited, verdict.FlagHTTPCheckFiltered, verdict.FlagICMPBlocked, verdict.FlagSymmetricNAT, verdict.FlagWiFiWeak,
+		verdict.FlagGWICMPBlocked, verdict.FlagGWICMPRateLimited, verdict.FlagHTTPCheckFiltered, verdict.FlagMTUReduced, verdict.FlagICMPBlocked, verdict.FlagSymmetricNAT, verdict.FlagWiFiWeak,
 		verdict.FlagWiFi24GHz, verdict.FlagCPUHigh, verdict.FlagTeamsSrcPortsBlocked, verdict.FlagTeamsDisabled,
 		verdict.FlagTeamsRelayUnreachable, verdict.FlagServiceUnreachable, verdict.FlagCustomTargetDown, verdict.FlagCSVWriteError,
 	} {
@@ -95,7 +95,7 @@ func TestScenarios_Coverage(t *testing.T) {
 		"csv_write_error", "meet_udp_blocked", "mtu_issue", "lan_loss", "isp_loss", "poor_voip", "symmetric_nat",
 		"wifi_weak_24ghz", "wifi_ssid_hidden", "cpu_high", "no_media_fallback", "custom_target_down",
 		"adapter_change", "flapping_gateway", "recovery", "onlink_route", "no_route_fallback",
-		"http_check_filtered", "captive_portal_blocked", "captive_portal_dns_hijack", "gw_icmp_rate_limited", "gw_icmp_blocked_outage",
+		"http_check_filtered", "mtu_blackhole", "mtu_reduced_pppoe", "captive_portal_blocked", "captive_portal_dns_hijack", "gw_icmp_rate_limited", "gw_icmp_blocked_outage",
 	}
 	for _, name := range required {
 		if scs[name] == nil {

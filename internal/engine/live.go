@@ -51,8 +51,13 @@ func RunLive(ctx context.Context, o LiveOptions) (Snapshot, error) {
 	bg.Add(2)
 	go func() { defer bg.Done(); watchSystem(ctx, o, eng, changed) }()
 	var last string
+	printedEvents := 0
 	report := func(prefix string) {
 		snap := eng.Snapshot()
+		for ; printedEvents < len(snap.AdapterEvents); printedEvents++ {
+			ev := snap.AdapterEvents[printedEvents]
+			fmt.Fprintf(o.Out, "%s  %s\n", ev.Time.Local().Format("15:04:05"), ev)
+		}
 		line := Describe(snap)
 		if line != last || prefix != "" {
 			fmt.Fprintf(o.Out, "%s  %s%s\n", snap.Time.Local().Format("15:04:05"), prefix, line)
@@ -87,6 +92,7 @@ func RunLive(ctx context.Context, o LiveOptions) (Snapshot, error) {
 // ends or the primary adapter changes.
 func runGeneration(ctx context.Context, o LiveOptions, eng *Engine, changed <-chan struct{}) {
 	primary := eng.Primary()
+	gen := eng.Generation()
 	specs, probes := Runnable(o.Cfg, primary, BuildSeries(o.Cfg, primary), o.Deps)
 	eng.SetSeries(specs)
 	series := make([]sched.Series, len(specs))
@@ -96,7 +102,8 @@ func runGeneration(ctx context.Context, o LiveOptions, eng *Engine, changed <-ch
 			Gate: func() sched.Decision { return eng.Decision(sp.ID) },
 		}
 	}
-	tracer := newTracer(o, eng)
+	sink := eng.SinkFor(gen)
+	tracer := newTracer(o, eng, gen, sink)
 	eng.SetTrace(tracer.Hops)
 
 	genCtx, cancel := context.WithCancel(ctx)
@@ -107,7 +114,7 @@ func runGeneration(ctx context.Context, o LiveOptions, eng *Engine, changed <-ch
 		defer wg.Done()
 		s := sched.New(o.Clock)
 		s.Logger = o.Logger
-		s.Run(genCtx, series, eng.OnSample)
+		s.Run(genCtx, series, sink)
 	}()
 	go func() { defer wg.Done(); tracer.Run(genCtx) }()
 	select {
@@ -120,7 +127,7 @@ func runGeneration(ctx context.Context, o LiveOptions, eng *Engine, changed <-ch
 
 // newTracer builds the TRC-01 tracer: hop series are added to the engine
 // as they are found, and the engine's L3 gate decides when to probe.
-func newTracer(o LiveOptions, eng *Engine) *probe.Tracer {
+func newTracer(o LiveOptions, eng *Engine, gen int, sink func(probe.Sample)) *probe.Tracer {
 	cfg := o.Cfg
 	t := &probe.Tracer{
 		ICMP:     o.Deps.ICMP,
@@ -134,13 +141,13 @@ func newTracer(o LiveOptions, eng *Engine) *probe.Tracer {
 			d := eng.TraceDecision()
 			return d.Action == sched.Run, d.Reason
 		},
-		Emit: eng.OnSample,
+		Emit: sink,
 		Register: func(id string, interval time.Duration) {
 			ttl := 0
 			_, _ = fmt.Sscanf(strings.TrimPrefix(id, "TRC-01:"), "%d", &ttl)
 			s := Spec{Probe: "TRC-01", Target: fmt.Sprintf("hop %d", ttl)}
 			s.ID, s.Interval = id, interval
-			eng.AddSeries(s)
+			eng.AddSeriesFor(gen, s)
 		},
 	}
 	switch {

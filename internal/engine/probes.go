@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -68,7 +69,8 @@ func BuildProbe(cfg *config.Config, p sysapi.Primary, sp Spec, d Deps) (probe.Pr
 	case "SVC-01":
 		return probe.TLSProbe{Resolver: d.Resolver, Host: sp.Target, Timeout: ms(to.TLS)}, true
 	case "MTU-01":
-		return probe.MTUProbe{ICMP: d.ICMP, Resolver: d.Resolver, Host: sp.Target, Timeout: ms(to.ICMP)}, true
+		return &probe.MTUProbe{ICMP: d.ICMP, Resolver: d.Resolver, Host: sp.Target, Timeout: ms(to.ICMP),
+			LowBelow: cfg.Thresholds.MTUMin, Sleep: d.sleep}, true
 	case "CUST-ICMP":
 		return probe.HostICMPProbe{ICMP: d.ICMP, Resolver: d.customResolver(), Host: sp.Target, Timeout: ms(to.ICMP)}, true
 	case "CUST-TCP":
@@ -105,3 +107,20 @@ func Runnable(cfg *config.Config, p sysapi.Primary, specs []Spec, d Deps) ([]Spe
 
 // DefaultDialer is the plain dialer of the TCP probes.
 func DefaultDialer() probe.Dialer { return &net.Dialer{} }
+
+// sleep waits on the injected clock (nil clock: real time).
+func (d Deps) sleep(ctx context.Context, wait time.Duration) {
+	if d.Clock == nil {
+		select {
+		case <-ctx.Done():
+		case <-time.After(wait):
+		}
+		return
+	}
+	t := d.Clock.NewTimer(wait)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C():
+	}
+}

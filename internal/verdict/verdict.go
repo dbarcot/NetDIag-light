@@ -79,6 +79,7 @@ const (
 	FlagGWICMPBlocked         = "GW_ICMP_BLOCKED"
 	FlagGWICMPRateLimited     = "GW_ICMP_RATE_LIMITED"
 	FlagHTTPCheckFiltered     = "HTTP_CHECK_FILTERED" // ":<host>" appended
+	FlagMTUReduced            = "MTU_REDUCED"         // ":<mtu>" appended
 	FlagICMPBlocked           = "ICMP_BLOCKED"
 	FlagSymmetricNAT          = "SYMMETRIC_NAT"
 	FlagWiFiWeak              = "WIFI_WEAK"
@@ -422,10 +423,9 @@ func (e *eval) primary(failing, lastOK func(SeriesData) bool, net04OK, icmpBlock
 			return MeetUDPBlocked, ""
 		}
 	}
-	th := e.in.Thresholds
 	for _, s := range e.probe("MTU-01") {
-		if l, ok := s.Last(); ok && l.Result == probe.OK && l.Value > 0 && int(l.Value) < th.MTUMin {
-			return MTUIssue, fmt.Sprintf("path MTU %d to %s", int(l.Value), s.Target)
+		if mtu, ok := e.mtuBlackHole(s); ok {
+			return MTUIssue, fmt.Sprintf("path MTU %d to %s (larger packets are dropped silently)", mtu, s.Target)
 		}
 	}
 	lossy := e.lossy
@@ -444,6 +444,32 @@ func (e *eval) primary(failing, lastOK func(SeriesData) bool, net04OK, icmpBlock
 		return QualityPoorVoIP, q.Source
 	}
 	return OK, ""
+}
+
+// confirmedMTU returns the MTU of a series' sample if it is a confirmed
+// result (an ok sample); unconfirmed runs are failures.
+func confirmedMTU(l probe.Sample) (int, bool) {
+	return int(l.Value), l.Result == probe.OK && l.Value > 0
+}
+
+// mtuBlackHole reports a PMTUD black hole to one target: its two newest
+// runs are both confirmed, both below thresholds.mtu_min and both bounded
+// silently (bigger packets are dropped without "packet too big"). A single
+// low run, an unconfirmed run in between, or a signalled bound (a plain
+// smaller MTU: PPPoE, VPN) is not (SPEC §8).
+func (e *eval) mtuBlackHole(s SeriesData) (int, bool) {
+	if len(s.Recent) < 2 {
+		return 0, false
+	}
+	last := 0
+	for _, l := range s.Recent[len(s.Recent)-2:] {
+		mtu, ok := confirmedMTU(l)
+		if !ok || mtu >= e.in.Thresholds.MTUMin || l.Bound != probe.BoundSilent {
+			return 0, false
+		}
+		last = mtu
+	}
+	return last, true
 }
 
 func isCaptive(s SeriesData) bool {
@@ -531,6 +557,17 @@ func (e *eval) flags(failing func(SeriesData) bool, gwICMPBlocked, gwRateLimited
 	if w := e.in.WiFi; w != nil && w.HasDetails() {
 		add(w.SignalPct != nil && *w.SignalPct < th.WiFiSignalPct, FlagWiFiWeak)
 		add(w.Is24GHz(), FlagWiFi24GHz)
+	}
+	// a confirmed reduced MTU whose bound was signalled: path MTU discovery
+	// works, so it is information, not a problem
+	var reduced []int
+	for _, s := range e.probe("MTU-01") {
+		if l, ok := s.Last(); ok && l.Bound == probe.BoundSignalled {
+			if mtu, ok := confirmedMTU(l); ok && mtu < probe.MaxMTU && !slices.Contains(reduced, mtu) {
+				reduced = append(reduced, mtu)
+				add(true, fmt.Sprintf("%s:%d", FlagMTUReduced, mtu))
+			}
+		}
 	}
 	add(e.in.HasCPU && e.in.CPUAvg10 >= float64(th.CPUHighPct), FlagCPUHigh)
 	// a dead test relay says nothing about the source ports

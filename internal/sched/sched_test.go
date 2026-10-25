@@ -435,3 +435,36 @@ func TestRandomOffset(t *testing.T) {
 		t.Error("zero interval")
 	}
 }
+
+// A sample can ask for an early re-run (MTU-01 after its first low
+// result): the series runs again after that long instead of at its next
+// grid slot, and goes back to its grid afterwards.
+func TestScheduler_EarlyRerunRequestedBySample(t *testing.T) {
+	t.Parallel()
+	var runs atomic.Int32
+	p := probe.Func(func(context.Context) probe.Sample {
+		s := probe.Sample{Result: probe.OK}
+		if runs.Add(1) == 1 {
+			s.RerunAfter = 60 * time.Second
+		}
+		return s
+	})
+	h := start(t, []Series{{ID: "MTU-01:x", Probe: "MTU-01", Interval: 10 * time.Minute, P: p}}, 0)
+	defer h.stop()
+	h.step(0, time.Second)
+	h.clock.Advance(0)
+	waitFor(t, func() bool { return len(h.sink.all()) == 1 })
+	h.step(59*time.Second, time.Second)
+	if n := len(h.sink.all()); n != 1 {
+		t.Fatalf("%d samples after 59 s, want 1", n)
+	}
+	h.step(time.Second, time.Second)
+	waitFor(t, func() bool { return len(h.sink.all()) == 2 })
+	// the next run is on the normal interval again (10 min after the re-run)
+	h.step(9*time.Minute, 30*time.Second)
+	if n := len(h.sink.all()); n != 2 {
+		t.Fatalf("%d samples before the interval is up, want 2", n)
+	}
+	h.step(time.Minute, 30*time.Second)
+	waitFor(t, func() bool { return len(h.sink.all()) == 3 })
+}

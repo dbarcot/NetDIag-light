@@ -159,3 +159,28 @@ func TestStore_ConcurrentAdd(t *testing.T) {
 		t.Errorf("series %v", s.IDs())
 	}
 }
+
+func TestStore_ResetSeriesAndRetain(t *testing.T) {
+	t.Parallel()
+	c := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	s := New(c, time.Minute, 15*time.Minute)
+	for _, id := range []string{"A", "B", "C"} {
+		s.Register(id, time.Second)
+		s.Add(probe.Sample{Series: id, Time: c.Now(), Result: probe.OK})
+	}
+	s.ResetSeries([]string{"A", "nope"})
+	if len(s.History("A")) != 0 || len(s.History("B")) != 1 || len(s.History("C")) != 1 {
+		t.Errorf("only A is cleared: %d %d %d", len(s.History("A")), len(s.History("B")), len(s.History("C")))
+	}
+	s.Add(probe.Sample{Series: "A", Time: c.Now(), Result: probe.OK})
+	if len(s.History("A")) != 1 {
+		t.Error("a cleared series keeps recording")
+	}
+	s.Retain([]string{"A", "C"})
+	if ids := s.IDs(); len(ids) != 2 || ids[0] != "A" || ids[1] != "C" {
+		t.Errorf("ids %v, want A and C", ids)
+	}
+	if len(s.History("B")) != 0 {
+		t.Error("B was removed")
+	}
+}

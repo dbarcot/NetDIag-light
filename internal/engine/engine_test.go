@@ -3,6 +3,7 @@ package engine
 import (
 	"net/netip"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -222,5 +223,132 @@ func TestEngine_MarksRecoverySamples(t *testing.T) {
 	e.OnSample(probe.Sample{Series: net04, Time: c.Now(), Result: probe.OK, RTT: 20 * time.Millisecond})
 	if h := e.Store().History(net04); h[len(h)-1].Recovery {
 		t.Error("sample with L3 open marked recovery")
+	}
+}
+
+// feedSecond records one second of samples for the series of a catalog:
+// ok unless lossy(id) says this one fails.
+func feedSecond(e *Engine, c *clock.Fake, lossy func(id string) bool) {
+	for _, sp := range e.Specs() {
+		switch sp.Probe {
+		case "LAN-01", "NET-01", "NET-04", "RT-01", "DNS-01", "SYS-01":
+		default:
+			continue
+		}
+		s := probe.Sample{Series: sp.ID, Probe: sp.Probe, Target: sp.Target, Time: c.Now(), Result: probe.OK, RTT: 10 * time.Millisecond, Value: 20}
+		if lossy != nil && lossy(sp.ID) {
+			s = probe.Sample{Series: sp.ID, Probe: sp.Probe, Target: sp.Target, Time: c.Now(), Result: probe.Fail, ErrClass: probe.ClassTimeout}
+		}
+		e.OnSample(s)
+	}
+	e.Tick()
+	c.Advance(time.Second)
+}
+
+// Wi-Fi drops, the laptop moves to Ethernet: the failures measured on the
+// old path must not read as LAN_LOSS/ISP_LOSS on the new one (SPEC §6).
+func TestEngine_AdapterChangeStartsNewSeries(t *testing.T) {
+	t.Parallel()
+	e, c := newEngine(t)
+	cfg := config.Default()
+	e.SetSystem(system(wifiAdapter("192.168.1.23/24", "192.168.1.1"), "192.168.1.1"))
+	e.SetSeries(BuildSeries(cfg, e.Primary()))
+	oldGen := e.Generation()
+
+	// 20 s of a bad Wi-Fi link: every other ping to the gateway and to the internet is lost
+	n := 0
+	for n = 0; n < 20; n++ {
+		feedSecond(e, c, func(id string) bool {
+			if strings.HasPrefix(id, "LAN-01") || strings.HasPrefix(id, "NET-01") {
+				return n%2 == 0
+			}
+			return false
+		})
+	}
+	if v := e.Snapshot().Result.Verdict; v != verdict.LANLoss {
+		t.Fatalf("before the change: %s, want LAN_LOSS (test setup)", v)
+	}
+	if e.Store().Window("DNS-01:192.168.1.1") == nil {
+		t.Fatal("setup: no DNS-01 series")
+	}
+
+	// moves to Ethernet with another gateway and DNS server
+	eth := sysapi.Adapter{Index: 3, GUID: "{E}", Name: "Ethernet", Type: sysapi.AdapterEthernet, Hardware: true, Up: true,
+		IPv4: []netip.Prefix{netip.MustParsePrefix("10.0.0.5/24")}, DNSServers: []netip.Addr{netip.MustParseAddr("10.0.0.1")}}
+	e.SetSystem(system(eth, "10.0.0.1"))
+	e.SetSeries(BuildSeries(cfg, e.Primary()))
+
+	if got := len(e.Store().Window("LAN-01:gateway")); got != 0 {
+		t.Errorf("LAN-01 window has %d samples of the old path", got)
+	}
+	if got := len(e.Store().History("NET-01:1.1.1.1")); got != 0 {
+		t.Errorf("NET-01 history has %d samples of the old path", got)
+	}
+	if got := len(e.Store().Window("SYS-01:cpu")); got == 0 {
+		t.Error("the CPU series belongs to the machine and must survive an adapter change")
+	}
+	ids := e.Store().IDs()
+	if slices.Contains(ids, "DNS-01:192.168.1.1") {
+		t.Errorf("the stale series DNS-01:192.168.1.1 is still in the store: %v", ids)
+	}
+	if !slices.Contains(ids, "DNS-01:10.0.0.1") {
+		t.Errorf("no series for the new DNS server: %v", ids)
+	}
+
+	// a probe of the old adapter still in flight must not write into the new series
+	e.SinkFor(oldGen)(probe.Sample{Series: "LAN-01:gateway", Time: c.Now(), Result: probe.Fail, ErrClass: probe.ClassTimeout})
+	if got := len(e.Store().History("LAN-01:gateway")); got != 0 {
+		t.Errorf("a stale-generation sample was recorded (%d)", got)
+	}
+
+	// clean samples on the new path: no loss verdict, however short the way back to OK
+	for range 15 {
+		feedSecond(e, c, nil)
+		if v := e.Snapshot().Result.Verdict; v == verdict.LANLoss || v == verdict.ISPLoss {
+			t.Fatalf("%s after the adapter change", v)
+		}
+	}
+	snap := e.Snapshot()
+	if snap.Result.Verdict != verdict.OK {
+		t.Errorf("verdict %s, want OK on the new adapter", snap.Result.Verdict)
+	}
+	if len(snap.AdapterEvents) != 1 {
+		t.Fatalf("events %+v, want one adapter change", snap.AdapterEvents)
+	}
+	ev := snap.AdapterEvents[0]
+	if ev.From != (AdapterInfo{Name: "Wi-Fi", IPv4: "192.168.1.23", Gateway: "192.168.1.1"}) ||
+		ev.To != (AdapterInfo{Name: "Ethernet", IPv4: "10.0.0.5", Gateway: "10.0.0.1"}) {
+		t.Errorf("event %+v", ev)
+	}
+	if got := ev.String(); got != "adapter change: Wi-Fi 192.168.1.23 gateway 192.168.1.1 -> Ethernet 10.0.0.5 gateway 10.0.0.1" {
+		t.Errorf("text %q", got)
+	}
+}
+
+// A new generation of series adds hops only for itself.
+func TestEngine_StaleGenerationCannotAddSeries(t *testing.T) {
+	t.Parallel()
+	e, _ := newEngine(t)
+	e.SetSystem(system(wifiAdapter("192.168.1.23/24", "192.168.1.1"), "192.168.1.1"))
+	e.SetSeries(BuildSeries(config.Default(), e.Primary()))
+	old := e.Generation()
+	eth := sysapi.Adapter{Index: 3, Name: "Ethernet", Type: sysapi.AdapterEthernet, Hardware: true, Up: true,
+		IPv4: []netip.Prefix{netip.MustParsePrefix("10.0.0.5/24")}}
+	e.SetSystem(system(eth, "10.0.0.1"))
+	e.SetSeries(BuildSeries(config.Default(), e.Primary()))
+	var s Spec
+	s.ID, s.Probe = "TRC-01:03", "TRC-01"
+	e.AddSeriesFor(old, s)
+	if slices.Contains(e.Store().IDs(), "TRC-01:03") {
+		t.Error("a hop of the old trace was added to the new generation")
+	}
+	e.AddSeriesFor(e.Generation(), s)
+	if !slices.Contains(e.Store().IDs(), "TRC-01:03") {
+		t.Error("a hop of the current trace was not added")
+	}
+	// the next generation drops it again
+	e.SetSeries(BuildSeries(config.Default(), e.Primary()))
+	if slices.Contains(e.Store().IDs(), "TRC-01:03") {
+		t.Error("old trace hops must be removed by the next SetSeries")
 	}
 }
