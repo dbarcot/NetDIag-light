@@ -3,8 +3,6 @@
 package sysapi
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -184,27 +182,28 @@ func (w *winWLAN) channel(guid string) (int, error) {
 	return v, err
 }
 
-// frequencyMHz finds the connected BSS in the cached BSS list (no scan is
-// triggered) and returns its center frequency.
-func (w *winWLAN) frequencyMHz(guid string, c wlanConn) (int, error) {
+// bssList returns the cached BSS list (no scan is triggered).
+func (w *winWLAN) bssList(guid string) ([]wlanBSS, error) {
 	g, ok := w.guids[guid]
 	if !ok {
-		return 0, fmt.Errorf("unknown WLAN interface %s", guid)
+		return nil, fmt.Errorf("unknown WLAN interface %s", guid)
 	}
 	var list unsafe.Pointer
 	r, _, _ := procWlanGetNetworkBssList.Call(uintptr(w.handle), uintptr(unsafe.Pointer(&g)), 0, dot11BSSTypeAny, 0, 0,
 		uintptr(unsafe.Pointer(&list)))
 	if r != 0 {
-		return 0, fmt.Errorf("WlanGetNetworkBssList: %w", windows.Errno(r))
+		return nil, fmt.Errorf("WlanGetNetworkBssList: %w", windows.Errno(r))
 	}
 	defer wlanFree(list)
 	n := *(*uint32)(unsafe.Add(list, 4))
+	out := make([]wlanBSS, 0, n)
 	for _, e := range unsafe.Slice((*wlanBSSEntry)(unsafe.Add(list, 8)), n) {
-		if bytes.Equal(e.BSSID[:], c.BSSID) {
-			return int(e.CenterFrequencyKHz / 1000), nil
-		}
+		out = append(out, wlanBSS{
+			BSSID:        append(net.HardwareAddr(nil), e.BSSID[:]...),
+			FrequencyMHz: int(e.CenterFrequencyKHz / 1000),
+		})
 	}
-	return 0, errors.New("connected BSS not in BSS list")
+	return out, nil
 }
 
 func wlanFree(p unsafe.Pointer) {

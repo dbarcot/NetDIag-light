@@ -4,6 +4,7 @@ package sysapi
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -16,9 +17,11 @@ const PollInterval = 5 * time.Second
 
 // WinChanges implements Changes with NotifyIpInterfaceChange,
 // NotifyUnicastIpAddressChange and NotifyRouteChange2 (IPv4), falling back
-// to polling Adapters when registration fails.
+// to polling adapters and the best route when registration fails.
 type WinChanges struct {
 	Adapters Adapters
+	Routes   Routes
+	Logger   *slog.Logger // optional; the fallback is logged here
 }
 
 // Callbacks made with windows.NewCallback are never freed, so one callback
@@ -62,6 +65,10 @@ func (w WinChanges) Watch(ctx context.Context) (<-chan struct{}, error) {
 		var h windows.Handle
 		if err := reg(&h); err != nil {
 			cancelNotify(handles, ch)
+			if w.Logger != nil {
+				w.Logger.Warn("network change notifications unavailable, polling instead",
+					"error", err, "interval", PollInterval)
+			}
 			return w.poll(ctx), nil
 		}
 		handles = append(handles, h)
@@ -91,19 +98,20 @@ func (w WinChanges) poll(ctx context.Context) <-chan struct{} {
 		<-ctx.Done()
 		t.Stop()
 	}()
-	return PollChanges(ctx, w.Adapters, t.C)
+	return PollChanges(ctx, w.Adapters, w.Routes, t.C)
 }
 
 // NewSystem returns the real Windows implementations of every boundary.
-func NewSystem() System {
-	ad := WinAdapters{}
+// logger may be nil.
+func NewSystem(logger *slog.Logger) System {
+	ad, rt := WinAdapters{}, WinRoutes{}
 	return System{
 		Adapters: ad,
-		Routes:   WinRoutes{},
-		ARP:      WinARP{},
+		Routes:   rt,
+		ARP:      NewARP(),
 		WiFi:     NewWiFi(),
 		CPU:      WinCPU{},
-		Changes:  WinChanges{Adapters: ad},
+		Changes:  WinChanges{Adapters: ad, Routes: rt, Logger: logger},
 		Console:  NewConsole(),
 	}
 }

@@ -60,10 +60,12 @@ type Routes interface {
 	BestRoute(ctx context.Context, dest netip.Addr) (Route, error)
 }
 
-// ARP resolves an on-link IPv4 address to a MAC address on an interface;
-// ErrUnresolved when the neighbor does not answer.
+// ARP resolves an on-link IPv4 address on an interface. It returns the MAC
+// with the neighbor state (check Outcome: a stale entry is "unconfirmed",
+// not a success), ErrUnresolved when the neighbor does not answer, and
+// ErrARPBusy when the previous call for the same address is still running.
 type ARP interface {
-	Resolve(ctx context.Context, ip netip.Addr, ifIndex uint32) (net.HardwareAddr, error)
+	Resolve(ctx context.Context, ip netip.Addr, ifIndex uint32) (ARPResult, error)
 }
 
 // WiFi reports the state of every WLAN interface. No WLAN service, DLL or

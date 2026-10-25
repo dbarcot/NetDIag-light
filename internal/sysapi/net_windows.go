@@ -173,54 +173,23 @@ type mibIPNetRow2 struct {
 	ReachabilityTime      uint32
 }
 
-// NL_NEIGHBOR_STATE values that mean "no MAC known".
-const (
-	nlnsUnreachable = 0
-	nlnsIncomplete  = 1
-)
+// NewARP returns the Windows ARP: ResolveIpNetEntry2 (sends an ARP request
+// and blocks until answered or timed out; no admin needed) wrapped so that
+// calls for one address never overlap.
+func NewARP() *SerialARP { return NewSerialARP(resolveIPNet) }
 
-// WinARP implements ARP with ResolveIpNetEntry2, which sends an ARP
-// request and blocks until it is answered or times out. No admin needed.
-type WinARP struct{}
-
-func (WinARP) Resolve(ctx context.Context, ip netip.Addr, ifIndex uint32) (net.HardwareAddr, error) {
-	if !ip.Is4() {
-		return nil, fmt.Errorf("ARP: %s is not IPv4", ip)
-	}
-	type result struct {
-		mac net.HardwareAddr
-		err error
-	}
-	// The call cannot be cancelled; on ctx end it finishes in the
-	// background within the OS ARP timeout (a few seconds).
-	done := make(chan result, 1)
-	go func() {
-		mac, err := resolveIPNet(ip, ifIndex)
-		done <- result{mac, err}
-	}()
-	select {
-	case r := <-done:
-		return r.mac, r.err
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-func resolveIPNet(ip netip.Addr, ifIndex uint32) (net.HardwareAddr, error) {
+func resolveIPNet(ip netip.Addr, ifIndex uint32) (ARPResult, error) {
 	row := mibIPNetRow2{Address: toRawInet(ip), InterfaceIndex: ifIndex}
 	r, _, _ := procResolveIPNetEntry2.Call(uintptr(unsafe.Pointer(&row)), 0)
 	switch errno := windows.Errno(r); errno {
 	case 0:
 	case windows.ERROR_BAD_NET_NAME, windows.ERROR_NOT_FOUND, windows.ERROR_NETWORK_UNREACHABLE, windows.ERROR_HOST_UNREACHABLE:
-		return nil, ErrUnresolved
+		return ARPResult{State: NeighborUnreachable}, ErrUnresolved
 	default:
-		return nil, fmt.Errorf("ResolveIpNetEntry2: %w", errno)
+		return ARPResult{}, fmt.Errorf("ResolveIpNetEntry2: %w", errno)
 	}
-	n := row.PhysicalAddressLength
-	if n == 0 || n > uint32(len(row.PhysicalAddress)) || row.State == nlnsUnreachable || row.State == nlnsIncomplete {
-		return nil, ErrUnresolved
-	}
-	return append(net.HardwareAddr(nil), row.PhysicalAddress[:n]...), nil
+	n := min(row.PhysicalAddressLength, uint32(len(row.PhysicalAddress)))
+	return neighborResult(NeighborState(row.State), row.PhysicalAddress[:n])
 }
 
 // WinCPU implements CPU with GetSystemTimes.

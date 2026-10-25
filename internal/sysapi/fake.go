@@ -130,24 +130,49 @@ func (f *FakeAdapters) Set(list []Adapter) {
 
 // FakeRoutes returns Route for every destination, or Err.
 type FakeRoutes struct {
+	mu    sync.Mutex
 	Route Route
 	Err   error
 }
 
 func (f *FakeRoutes) BestRoute(context.Context, netip.Addr) (Route, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.Route, f.Err
 }
 
-// FakeARP resolves the IPs in Table; anything else is ErrUnresolved.
-type FakeARP struct {
-	Table map[netip.Addr]net.HardwareAddr
+// Set replaces the route and error.
+func (f *FakeRoutes) Set(r Route, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Route, f.Err = r, err
 }
 
-func (f *FakeARP) Resolve(_ context.Context, ip netip.Addr, _ uint32) (net.HardwareAddr, error) {
-	if mac, ok := f.Table[ip]; ok {
-		return mac, nil
+// FakeARP answers from Table with the same rules as Windows (an entry in
+// a failed state is ErrUnresolved); unknown IPs are ErrUnresolved.
+type FakeARP struct {
+	mu    sync.Mutex
+	Table map[netip.Addr]ARPResult
+}
+
+func (f *FakeARP) Resolve(_ context.Context, ip netip.Addr, _ uint32) (ARPResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.Table[ip]
+	if !ok {
+		return ARPResult{State: NeighborUnreachable}, ErrUnresolved
 	}
-	return nil, ErrUnresolved
+	return neighborResult(r.State, r.MAC)
+}
+
+// Set changes the entry for ip.
+func (f *FakeARP) Set(ip netip.Addr, mac net.HardwareAddr, state NeighborState) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Table == nil {
+		f.Table = map[netip.Addr]ARPResult{}
+	}
+	f.Table[ip] = ARPResult{MAC: mac, State: state}
 }
 
 // FakeWiFi returns a fixed status list.

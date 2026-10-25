@@ -75,6 +75,8 @@ Rules (from `CLAUDE.md`): finish phases in order; tests are written during the p
 
 **Tests**
 - Gate table tests: each layer opens/closes correctly; hysteresis (2 fails → still open, 3 → closed); recovery reopens dependents; ICMP-blocked network still opens L4 via TCP; on-link resolver doesn't depend on L4.
+- L3 evidence (SPEC §6): stale/probe/delay ARP alone does not open L3; Reachable/Permanent ARP or a successful NET-01/NET-04/RT-01 does; `GW_ICMP_BLOCKED` only with Reachable/Permanent ARP or L4 working; on-link route opens L3 with L2 and skips LAN-01/02; `previous ARP still pending` counts as a LAN-02 failure.
+- L1/L2 from `sysapi.SelectPrimary`: no primary or primary down → `NO_LINK`; only APIPA → `APIPA`; no IPv4 → `NO_ADDRESS`.
 - Verdict tests: every verdict and info flag has at least one scenario producing it; priority ordering when multiple apply; exit-code mapping.
 - Scenario runner test: each file in `testdata/scenarios/` runs to completion under fake clock and asserts its own `expect` block.
 

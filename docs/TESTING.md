@@ -49,7 +49,7 @@ Location: `testdata/scenarios/*.json`. Format:
   "rules": [
     { "probe": "LAN-01", "from_s": 0,  "to_s": 90, "rtt_ms": [2, 0.5] },
     { "probe": "LAN-01", "from_s": 20, "to_s": 60, "result": "fail" },
-    { "probe": "LAN-02", "from_s": 20, "to_s": 60, "result": "fail" },
+    { "probe": "LAN-02", "from_s": 20, "to_s": 60, "arp_state": "stale" },
     { "probe": "NET-01", "target": "8.8.8.8", "loss_pct": 5 }
   ],
   "events": [
@@ -66,9 +66,10 @@ Location: `testdata/scenarios/*.json`. Format:
 - `rtt_ms: [mean, stddev]` gives deterministic pseudo-random RTTs (seeded by scenario name).
 - `loss_pct` drops a deterministic fraction of samples.
 - Rules are matched last-wins by `probe` + optional `target` + time range.
+- LAN-02 rules may set `arp_state` (`reachable`, `permanent`, `probe`, `delay`, `stale`, `incomplete`, `unreachable`, `busy`) instead of `result`. `gw_down` uses `stale` after the failure point, as Windows keeps the cached MAC of a dead gateway: the scenario proves a stale entry does not keep L3 open (SPEC §6). A scenario with a stale ARP entry while NET-01 still succeeds must keep L3 open and raise `GW_ICMP_BLOCKED` when LAN-01 fails.
 - `expect` entries are asserted by the scenario runner test.
 
-**Required scenario set (at least):** `ok`, `no_link`, `apipa`, `no_address`, `gw_down`, `gw_icmp_blocked`, `captive_portal`, `isp_down`, `icmp_blocked`, `dns_local_fail`, `dns_fail`, `udp_blocked`, `teams_udp_blocked`, `teams_partial_3480` (sets `teams.udp_ports` to 3478–3481), `teams_disabled_no_relays`, `teams_relay_unreachable` (relay DNS fails, or all Teams UDP + TCP 443 fail while Meet/STUN work → flag, no Teams UDP verdict), `service_unreachable`, `checking_startup` (`CHECKING` before gates decide), `csv_write_error`, `meet_udp_blocked`, `mtu_issue`, `lan_loss`, `isp_loss`, `poor_voip`, `symmetric_nat`, `wifi_weak_24ghz`, `wifi_ssid_hidden`, `cpu_high`, `no_media_fallback` (MEDIA-01 unavailable → call quality from NET-01), `custom_target_down`, `adapter_change`, `flapping_gateway` (checks hysteresis), `recovery` (all gates reopen).
+**Required scenario set (at least):** `ok`, `no_link`, `apipa`, `no_address`, `gw_down`, `gw_icmp_blocked`, `captive_portal`, `isp_down`, `icmp_blocked`, `dns_local_fail`, `dns_fail`, `udp_blocked`, `teams_udp_blocked`, `teams_partial_3480` (sets `teams.udp_ports` to 3478–3481), `teams_disabled_no_relays`, `teams_relay_unreachable` (relay DNS fails, or all Teams UDP + TCP 443 fail while Meet/STUN work → flag, no Teams UDP verdict), `service_unreachable`, `checking_startup` (`CHECKING` before gates decide), `csv_write_error`, `meet_udp_blocked`, `mtu_issue`, `lan_loss`, `isp_loss`, `poor_voip`, `symmetric_nat`, `wifi_weak_24ghz`, `wifi_ssid_hidden`, `cpu_high`, `no_media_fallback` (MEDIA-01 unavailable → call quality from NET-01), `custom_target_down`, `adapter_change`, `flapping_gateway` (checks hysteresis), `onlink_route` (no gateway: L3 open with L2, LAN-01/02 skipped), `no_route_fallback` (no default route: primary chosen among physical adapters), `recovery` (all gates reopen).
 
 ## 4. Console tests
 

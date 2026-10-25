@@ -26,7 +26,7 @@ Read these before writing code:
 
 ## Constraints
 
-- Windows 10/11 and Server 2016+ only. Code may use `//go:build windows` freely; the module does not need to build on other OSes, The tool is Windows-only; all code and tests target Windows only. Keep pure logic free of OS calls anyway, so it is testable with fakes.
+- Windows 10/11 and Server 2016+ only. The tool is Windows-only: all code and tests target Windows, and the module does not need to build on other OSes, but pure logic stays free of OS calls so it is testable with fakes.
 - No admin rights. The exe manifest is `asInvoker`. Never use raw sockets.
 - No cgo. Windows APIs via `golang.org/x/sys/windows` or `windows.NewLazySystemDLL`.
 - No proxy handling. Direct connections only.

@@ -16,7 +16,7 @@ var traceTarget = netip.MustParseAddr("1.1.1.1") // default targets.trace / best
 // system information this machine reports (run with -v).
 func TestSysinfo_Print(t *testing.T) {
 	ctx := context.Background()
-	sys := NewSystem()
+	sys := NewSystem(nil)
 
 	adapters, err := sys.Adapters.Adapters(ctx)
 	if err != nil {
@@ -31,8 +31,14 @@ func TestSysinfo_Print(t *testing.T) {
 	}
 
 	rt, err := sys.Routes.BestRoute(ctx, traceTarget)
+	p := SelectPrimary(adapters, rt, err)
+	t.Logf("primary adapter: %q (#%d) reason=%s link=%v address=%s gateway=%v onLink=%v",
+		p.Adapter.Name, p.Adapter.Index, p.Reason, p.LinkUp(), p.Address(), p.Gateway, p.OnLink)
 	if errors.Is(err, ErrNoRoute) {
 		t.Skip("no route to 1.1.1.1 on this machine")
+	}
+	if p.Reason != PrimaryByRoute {
+		t.Errorf("route exists but primary reason is %s", p.Reason)
 	}
 	if err != nil {
 		t.Fatalf("best route: %v", err)
@@ -51,11 +57,15 @@ func TestSysinfo_Print(t *testing.T) {
 
 	if rt.Gateway.IsValid() {
 		start := time.Now()
-		mac, err := sys.ARP.Resolve(ctx, rt.Gateway, rt.InterfaceIndex)
+		r, err := sys.ARP.Resolve(ctx, rt.Gateway, rt.InterfaceIndex)
 		if err != nil {
 			t.Errorf("ARP for gateway %s: %v", rt.Gateway, err)
 		} else {
-			t.Logf("gateway MAC %s (resolved in %s)", mac, time.Since(start).Round(time.Millisecond))
+			t.Logf("gateway MAC %s state=%s outcome=%s (in %s)", r.MAC, r.State, r.Outcome(), time.Since(start).Round(time.Millisecond))
+			// A live gateway that just answered an ARP request must be confirmed, not stale.
+			if r.Outcome() != ARPResolved {
+				t.Errorf("gateway answered but outcome is %s", r.Outcome())
+			}
 		}
 	}
 
@@ -67,9 +77,9 @@ func TestSysinfo_Print(t *testing.T) {
 		t.Log("Wi-Fi: no WLAN interface")
 	}
 	for _, w := range wifi {
-		t.Logf("Wi-Fi %s %q connected=%v ssid=%q hidden=%v signal=%v rssi=%v channel=%v freq=%v band=%q",
+		t.Logf("Wi-Fi %s %q connected=%v ssid=%q hidden=%v signal=%v rssi=%v channel=%v freq=%v band=%q (%s)",
 			w.InterfaceGUID, w.Description, w.Connected, w.SSID, w.SSIDHidden,
-			deref(w.SignalPct), deref(w.RSSI), deref(w.Channel), deref(w.FrequencyMHz), w.Band)
+			deref(w.SignalPct), deref(w.RSSI), deref(w.Channel), deref(w.FrequencyMHz), w.BandLabel(), w.BandSource)
 	}
 
 	m := NewCPUMeter(sys.CPU)
@@ -100,7 +110,7 @@ func TestWinARP_UnusedAddressIsUnresolved(t *testing.T) {
 	// TEST-NET-1 is never on-link; resolution must fail cleanly, not hang.
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if _, err := (WinARP{}).Resolve(ctx, netip.MustParseAddr("192.0.2.1"), rt.InterfaceIndex); err == nil {
+	if _, err := NewARP().Resolve(ctx, netip.MustParseAddr("192.0.2.1"), rt.InterfaceIndex); err == nil {
 		t.Error("ARP for 192.0.2.1 succeeded")
 	} else {
 		t.Logf("ARP 192.0.2.1: %v", err)
@@ -131,7 +141,7 @@ func TestWinWiFi_NoPanicAndCleanResult(t *testing.T) {
 
 func TestWinChanges_WatchStopsOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	ch, err := WinChanges{Adapters: WinAdapters{}}.Watch(ctx)
+	ch, err := WinChanges{Adapters: WinAdapters{}, Routes: WinRoutes{}}.Watch(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
