@@ -38,6 +38,7 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 
 - **Review fixes pending:** none for Phases 1–4.
 - **Wiring still missing:** TEAMS-01/02, MEET-01, MEDIA-01, SRC-01 probes (Phase 8; their series exist for sim/verdicts but are not scheduled in a live run); `CSV_WRITE_ERROR` is only set by sim events until Phase 6; `--headless` (Phase 9).
+- **Phase 9 hardening (memory on long headless runs, SPEC §12):** `Gates.history` (all gate transitions) and the engine's adapter events (`Engine.events`) grow without bound. Cap both (e.g. keep the last 1000), count what was dropped and report the count (report JSON, `GateHistory`/`AdapterEvents` callers) so a truncated history is visible. Add tests for the cap and the count.
 - **Known limitations:**
   - `sim.Live` (`run --sim`) resets gates on an adapter change but does not rebuild series; the real `engine.RunLive` does rebuild them (Phase 4). Old-adapter series are removed from the store by `SetSeries`.
   - After a gateway recovery the verdict shows `CHECKING` for about a second while L4/L5 are re-decided (by design).
