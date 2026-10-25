@@ -76,12 +76,13 @@ func (w WinICMP) Echo(ctx context.Context, req EchoRequest) (EchoReply, error) {
 	if ttl == 0 {
 		ttl = DefaultTTL
 	}
-	timeout := req.Timeout
-	if dl, ok := ctx.Deadline(); ok {
-		timeout = min(timeout, time.Until(dl))
+	if err := ctx.Err(); err != nil {
+		return EchoReply{}, err
 	}
-	if timeout <= 0 {
-		return EchoReply{}, ctx.Err()
+	dl, hasDL := ctx.Deadline()
+	timeout, ok := EchoTimeout(req.Timeout, dl, hasDL, time.Now())
+	if !ok {
+		return EchoReply{Status: StatusTimedOut}, nil
 	}
 
 	h, _, err := procIcmpCreateFile.Call()

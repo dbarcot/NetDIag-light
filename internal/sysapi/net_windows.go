@@ -79,6 +79,7 @@ func convertAdapter(a *windows.IpAdapterAddresses) Adapter {
 		Type:        adapterType(a.IfType),
 		Up:          a.OperStatus == windows.IfOperStatusUp,
 		MTU:         a.Mtu,
+		Hardware:    isHardware(a.Luid),
 	}
 	if n := a.PhysicalAddressLength; n > 0 && int(n) <= len(a.PhysicalAddress) {
 		ad.MAC = append(net.HardwareAddr(nil), a.PhysicalAddress[:n]...)
@@ -99,6 +100,28 @@ func convertAdapter(a *windows.IpAdapterAddresses) Adapter {
 		}
 	}
 	return ad
+}
+
+// InterfaceAndOperStatusFlags bits of MIB_IF_ROW2 (netioapi.h bit fields).
+const (
+	ifFlagHardwareInterface = 0x01
+	ifFlagConnectorPresent  = 0x04
+)
+
+// hardwareFlags reports whether the flags describe a real NIC.
+func hardwareFlags(flags uint8) bool {
+	const want = ifFlagHardwareInterface | ifFlagConnectorPresent
+	return flags&want == want
+}
+
+// isHardware looks up the interface row; an unknown interface counts as
+// not hardware.
+func isHardware(luid uint64) bool {
+	row := windows.MibIfRow2{InterfaceLuid: luid}
+	if err := windows.GetIfEntry2Ex(windows.MibIfEntryNormalWithoutStatistics, &row); err != nil {
+		return false
+	}
+	return hardwareFlags(row.InterfaceAndOperStatusFlags)
 }
 
 func sockaddrIPv4(sa windows.SocketAddress) (netip.Addr, bool) {

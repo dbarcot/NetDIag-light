@@ -63,6 +63,32 @@ func TestICMPProbe_SendsDefaults(t *testing.T) {
 	}
 }
 
+func TestEchoTimeout(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 25, 14, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name     string
+		req      time.Duration
+		deadline time.Duration // from now; 0 = no deadline
+		want     time.Duration
+		ok       bool
+	}{
+		{"no deadline", time.Second, 0, time.Second, true},
+		{"deadline later than timeout", time.Second, 5 * time.Second, time.Second, true},
+		{"deadline shortens timeout", time.Second, 300 * time.Millisecond, 300 * time.Millisecond, true},
+		{"exactly 1 ms is allowed", time.Second, time.Millisecond, time.Millisecond, true},
+		{"below 1 ms: timed out without calling the API", time.Second, 999 * time.Microsecond, 999 * time.Microsecond, false},
+		{"deadline passed", time.Second, -time.Second, -time.Second, false},
+		{"zero request timeout", 0, 0, 0, false},
+	}
+	for _, tt := range tests {
+		got, ok := EchoTimeout(tt.req, now.Add(tt.deadline), tt.deadline != 0, now)
+		if got != tt.want || ok != tt.ok {
+			t.Errorf("%s: got %v, %v; want %v, %v", tt.name, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
 func TestReplyBufferSize(t *testing.T) {
 	t.Parallel()
 	const reply = 40 // sizeof(ICMP_ECHO_REPLY) on amd64

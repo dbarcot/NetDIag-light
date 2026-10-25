@@ -135,7 +135,8 @@ Run on a real Windows machine with internet. They verify the OS bindings and rea
 
 ## 6a. Build environment
 
-- All builds and tests run with `CGO_ENABLED=0` (the dev machine has `CGO_ENABLED=1` in `go env` because mingw is installed). `-race` needs cgo and is therefore not used.
+- All builds and tests run with `CGO_ENABLED=0` (the dev machine has `CGO_ENABLED=1` in `go env` because mingw is installed). The code never uses cgo.
+- **Race detector:** `-race` needs cgo and a C compiler (mingw gcc at `C:\mingw64\bin`), so it is the one exception: `$env:CGO_ENABLED='1'; go test -race ./...`. Run it after every change to concurrent code (scheduler, store, web, console input); the scheduler independence test calls the sink from several series goroutines and must be race-free.
 - The `asInvoker` manifest is compiled from `cmd/netdiag/netdiag.rc` + `netdiag.manifest` with mingw `windres` into `cmd/netdiag/rsrc_windows_amd64.syso`, which is committed; regenerate only when the manifest or version resource changes.
 
 ## 7. Conventions

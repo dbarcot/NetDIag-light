@@ -111,6 +111,22 @@ type ICMP interface {
 	Echo(ctx context.Context, req EchoRequest) (EchoReply, error)
 }
 
+// MinEchoTimeout is the shortest timeout passed to IcmpSendEcho2; below it
+// the echo is reported as timed out without calling the API (0 is never
+// passed).
+const MinEchoTimeout = time.Millisecond
+
+// EchoTimeout is the timeout for one echo: the request timeout, shortened
+// to what is left before the context deadline. ok is false when it is
+// below MinEchoTimeout.
+func EchoTimeout(req time.Duration, deadline time.Time, hasDeadline bool, now time.Time) (time.Duration, bool) {
+	t := req
+	if hasDeadline {
+		t = min(t, deadline.Sub(now))
+	}
+	return t, t >= MinEchoTimeout
+}
+
 // ReplyBufferSize is the reply buffer IcmpSendEcho2 gets for a payload
 // size (SPEC §5 note): room for the reply struct, the payload, 8 bytes of
 // ICMP header and an ICMP error message; at least 256 bytes.

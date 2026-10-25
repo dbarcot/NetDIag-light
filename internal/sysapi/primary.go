@@ -37,9 +37,10 @@ func (p Primary) Found() bool { return p.Reason != PrimaryNone }
 // SelectPrimary picks the primary adapter. With a route, it is the
 // route's interface (whatever type, e.g. a VPN adapter Windows routes
 // through). Without one — ErrNoRoute, any other route error, or a route
-// to an interface missing from the list — it falls back to physical
-// adapters only (ethernet, wifi): up first, then with any IPv4, then
-// ethernet before wifi, then lowest index.
+// to an interface missing from the list — it falls back to hardware
+// adapters only (Hardware set, type ethernet or wifi; virtual adapters
+// such as vEthernet are always up with an IPv4 and would hide NO_LINK):
+// up first, then with any IPv4, then ethernet before wifi, then lowest index.
 func SelectPrimary(adapters []Adapter, route Route, routeErr error) Primary {
 	if routeErr == nil {
 		if a, ok := FindAdapter(adapters, route.InterfaceIndex); ok {
@@ -50,7 +51,7 @@ func SelectPrimary(adapters []Adapter, route Route, routeErr error) Primary {
 	}
 	var phys []Adapter
 	for _, a := range adapters {
-		if a.Type == AdapterEthernet || a.Type == AdapterWiFi {
+		if a.Hardware && (a.Type == AdapterEthernet || a.Type == AdapterWiFi) {
 			phys = append(phys, a)
 		}
 	}

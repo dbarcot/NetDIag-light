@@ -1,5 +1,5 @@
 // Package stats implements the pure measurement math: loss, RTT summary,
-// RFC 3550 jitter and the simplified E-model MOS (SPEC §7).
+// jitter and the simplified E-model MOS (SPEC §7).
 package stats
 
 import (
@@ -7,6 +7,10 @@ import (
 
 	"netdiag/internal/probe"
 )
+
+// MinJitterPairs is the number of usable RTT pairs below which jitter is
+// unknown.
+const MinJitterPairs = 2
 
 // LossPct is failed / (ok + failed) in percent; skipped samples are not
 // part of either. 0 when nothing was sent.
@@ -17,16 +21,24 @@ func LossPct(ok, failed int) float64 {
 	return 100 * float64(failed) / float64(ok+failed)
 }
 
-// Jitter is the RFC 3550 interarrival jitter estimate over consecutive
-// RTTs: J += (|D| − J) / 16, starting at 0, where D is the difference
-// between successive RTTs.
-func Jitter(rtts []float64) float64 {
-	j := 0.0
-	for i := 1; i < len(rtts); i++ {
-		d := math.Abs(rtts[i] - rtts[i-1])
-		j += (d - j) / 16
+// Jitter is the mean of |RTT_i − RTT_{i−1}| over pairs of consecutive ok
+// samples: the steady-state value of the RFC 3550 estimator, without its
+// start-up bias toward 0 in short windows. A pair separated by a failed
+// or skipped sample is not used. ok is false below MinJitterPairs pairs.
+func Jitter(samples []probe.Sample) (jitterMs float64, ok bool) {
+	sum, pairs := 0.0, 0
+	for i := 1; i < len(samples); i++ {
+		a, b := samples[i-1], samples[i]
+		if a.Result != probe.OK || b.Result != probe.OK {
+			continue
+		}
+		sum += math.Abs(b.RTTms() - a.RTTms())
+		pairs++
 	}
-	return j
+	if pairs < MinJitterPairs {
+		return 0, false
+	}
+	return sum / float64(pairs), true
 }
 
 // StdDev is the population standard deviation (divide by n), as mtr shows.
@@ -52,7 +64,8 @@ func StdDev(v []float64) float64 {
 //	R   = 93.2 − (eff/40 if eff < 160 else (eff − 120)/10) − 2.5·loss%
 //	MOS = 1 + 0.035R + 7·10⁻⁶·R(R − 60)(100 − R), clamped to 1–4.5
 //
-// R is clamped to 0–100 first, where the polynomial is defined.
+// R is clamped to 0–100 first, where the polynomial is defined. Callers
+// pass jitter 0 when it is unknown.
 func MOS(avgRTTms, jitterMs, lossPct float64) float64 {
 	eff := avgRTTms + 2*jitterMs + 10
 	var r float64
@@ -78,11 +91,13 @@ type Summary struct {
 
 	HasRTT                         bool
 	Last, Avg, Best, Worst, StdDev float64
-	Jitter                         float64
+
+	HasJitter bool // false: unknown, shown as "-", never exceeds a threshold
+	Jitter    float64
 }
 
 // Summarize computes a Summary over samples ordered oldest first. Last is
-// the RTT of the newest ok sample; jitter runs over the ok RTTs in order.
+// the RTT of the newest ok sample.
 func Summarize(samples []probe.Sample) Summary {
 	var s Summary
 	rtts := make([]float64, 0, len(samples))
@@ -113,6 +128,6 @@ func Summarize(samples []probe.Sample) Summary {
 	s.Avg = sum / float64(len(rtts))
 	s.Last = rtts[len(rtts)-1]
 	s.StdDev = StdDev(rtts)
-	s.Jitter = Jitter(rtts)
+	s.Jitter, s.HasJitter = Jitter(samples)
 	return s
 }

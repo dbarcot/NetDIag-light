@@ -50,6 +50,19 @@ func TestWinICMP_UnreachableTestNetFailsWithinTimeout(t *testing.T) {
 	t.Logf("192.0.2.1: %s (%s) in %s", s.ErrClass, s.Detail, took.Round(time.Millisecond))
 }
 
+// A context with under 1 ms left must not reach IcmpSendEcho2 with a 0 timeout.
+func TestWinICMP_NearlyExpiredContextIsTimeout(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(500*time.Microsecond))
+	defer cancel()
+	r, err := WinICMP{}.Echo(ctx, EchoRequest{Dest: Loopback, Timeout: time.Second})
+	if err != nil && ctx.Err() == nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	if err == nil && r.Status != StatusTimedOut {
+		t.Errorf("status %s, want timed out", r.Status)
+	}
+}
+
 func TestWinICMP_TimerOverhead(t *testing.T) {
 	d, err := TimerOverhead(context.Background(), WinICMP{}, 10)
 	if err != nil || d <= 0 || d > 5*time.Millisecond {

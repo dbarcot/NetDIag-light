@@ -9,14 +9,16 @@ import (
 func pfx(s string) []netip.Prefix { return []netip.Prefix{netip.MustParsePrefix(s)} }
 
 var (
-	ethUp     = Adapter{Index: 4, Name: "Ethernet", Type: AdapterEthernet, Up: true, IPv4: pfx("192.168.1.10/24")}
-	ethDown   = Adapter{Index: 4, Name: "Ethernet", Type: AdapterEthernet, Up: false}
-	ethAPIPA  = Adapter{Index: 4, Name: "Ethernet", Type: AdapterEthernet, Up: true, IPv4: pfx("169.254.7.9/16")}
-	ethNoIP   = Adapter{Index: 4, Name: "Ethernet", Type: AdapterEthernet, Up: true}
-	wifiUp    = Adapter{Index: 9, Name: "Wi-Fi", Type: AdapterWiFi, Up: true, IPv4: pfx("10.0.0.20/24")}
-	wifiDown  = Adapter{Index: 9, Name: "Wi-Fi", Type: AdapterWiFi, Up: false}
+	ethUp     = Adapter{Index: 4, Name: "Ethernet", Type: AdapterEthernet, Hardware: true, Up: true, IPv4: pfx("192.168.1.10/24")}
+	ethDown   = Adapter{Index: 4, Name: "Ethernet", Type: AdapterEthernet, Hardware: true, Up: false}
+	ethAPIPA  = Adapter{Index: 4, Name: "Ethernet", Type: AdapterEthernet, Hardware: true, Up: true, IPv4: pfx("169.254.7.9/16")}
+	ethNoIP   = Adapter{Index: 4, Name: "Ethernet", Type: AdapterEthernet, Hardware: true, Up: true}
+	wifiUp    = Adapter{Index: 9, Name: "Wi-Fi", Type: AdapterWiFi, Hardware: true, Up: true, IPv4: pfx("10.0.0.20/24")}
+	wifiDown  = Adapter{Index: 9, Name: "Wi-Fi", Type: AdapterWiFi, Hardware: true, Up: false}
 	loopback  = Adapter{Index: 1, Name: "Loopback", Type: AdapterLoopback, Up: true, IPv4: pfx("127.0.0.1/8")}
 	vpnTunnel = Adapter{Index: 2, Name: "VPN", Type: AdapterTunnel, Up: true, IPv4: pfx("172.20.0.5/32")}
+	// Hyper-V/WSL switch adapter: type ethernet, always up with an IPv4, not hardware.
+	vEthernet = Adapter{Index: 30, Name: "vEthernet (WSL)", Type: AdapterEthernet, Hardware: false, Up: true, IPv4: pfx("172.28.16.1/20")}
 	gw        = netip.MustParseAddr("10.0.0.1")
 )
 
@@ -47,6 +49,12 @@ func TestSelectPrimary(t *testing.T) {
 			"VPN", PrimaryByRoute, true, true, AddressOK},
 		{"tunnel ignored in fallback", []Adapter{vpnTunnel, loopback, wifiDown}, Route{}, ErrNoRoute,
 			"Wi-Fi", PrimaryByFallback, false, false, AddressNone},
+		{"cable out with an up vEthernet: physical NIC chosen, NO_LINK", []Adapter{vEthernet, ethDown, loopback}, Route{}, ErrNoRoute,
+			"Ethernet", PrimaryByFallback, false, false, AddressNone},
+		{"only virtual adapters: none", []Adapter{vEthernet, loopback}, Route{}, ErrNoRoute,
+			"", PrimaryNone, false, false, AddressNone},
+		{"route through vEthernet is still used", []Adapter{vEthernet, ethDown}, Route{InterfaceIndex: 30}, nil,
+			"vEthernet (WSL)", PrimaryByRoute, true, true, AddressOK},
 		{"on-link route", []Adapter{ethUp}, Route{InterfaceIndex: 4}, nil,
 			"Ethernet", PrimaryByRoute, true, true, AddressOK},
 		{"fallback prefers up over down", []Adapter{ethDown, wifiUp}, Route{}, ErrNoRoute,
@@ -55,8 +63,8 @@ func TestSelectPrimary(t *testing.T) {
 			"Wi-Fi", PrimaryByFallback, false, true, AddressOK},
 		{"fallback prefers ethernet over wifi", []Adapter{wifiUp, ethUp}, Route{}, ErrNoRoute,
 			"Ethernet", PrimaryByFallback, false, true, AddressOK},
-		{"fallback lowest index as tie-break", []Adapter{{Index: 12, Name: "Ethernet 2", Type: AdapterEthernet, Up: true},
-			{Index: 3, Name: "Ethernet 1", Type: AdapterEthernet, Up: true}}, Route{}, ErrNoRoute,
+		{"fallback lowest index as tie-break", []Adapter{{Index: 12, Name: "Ethernet 2", Type: AdapterEthernet, Hardware: true, Up: true},
+			{Index: 3, Name: "Ethernet 1", Type: AdapterEthernet, Hardware: true, Up: true}}, Route{}, ErrNoRoute,
 			"Ethernet 1", PrimaryByFallback, false, true, AddressNone},
 		{"other route error falls back", []Adapter{ethUp}, Route{}, errors.New("GetBestRoute2: boom"),
 			"Ethernet", PrimaryByFallback, false, true, AddressOK},

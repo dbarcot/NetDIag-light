@@ -26,8 +26,8 @@ func TestSysinfo_Print(t *testing.T) {
 		t.Fatal("no adapters reported")
 	}
 	for _, a := range adapters {
-		t.Logf("adapter #%d %-12q type=%-8s up=%-5v mtu=%d mac=%s ipv4=%v gw=%v dns=%v guid=%s",
-			a.Index, a.Name, a.Type, a.Up, a.MTU, a.MAC, a.IPv4, a.Gateways, a.DNSServers, a.GUID)
+		t.Logf("adapter #%d %-12q type=%-8s hardware=%-5v up=%-5v mtu=%d mac=%s ipv4=%v gw=%v dns=%v guid=%s",
+			a.Index, a.Name, a.Type, a.Hardware, a.Up, a.MTU, a.MAC, a.IPv4, a.Gateways, a.DNSServers, a.GUID)
 	}
 
 	rt, err := sys.Routes.BestRoute(ctx, traceTarget)

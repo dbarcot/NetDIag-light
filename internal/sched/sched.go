@@ -4,7 +4,10 @@ package sched
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"math/rand/v2"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -48,6 +51,8 @@ type Scheduler struct {
 	// Offset returns the start offset of a series; defaults to uniform in
 	// [0, min(interval, MaxStartOffset)).
 	Offset func(interval time.Duration) time.Duration
+	// Logger, if set, receives probe panics with their stack.
+	Logger *slog.Logger
 }
 
 // New returns a scheduler on c with random start offsets.
@@ -104,7 +109,7 @@ func (s *Scheduler) loop(ctx context.Context, sr Series, next time.Time, sink fu
 		emit := true
 		switch d.Action {
 		case Run:
-			sm = sr.P.Run(ctx)
+			sm = s.runProbe(ctx, sr)
 			if ctx.Err() != nil {
 				return // cancelled mid-run: not a measurement
 			}
@@ -119,6 +124,20 @@ func (s *Scheduler) loop(ctx context.Context, sr Series, next time.Time, sink fu
 		}
 		next = nextSlot(next, sr.Interval, s.clock.Now())
 	}
+}
+
+// runProbe runs the probe, turning a panic into a local_error failure so
+// one broken probe never stops its series or the program.
+func (s *Scheduler) runProbe(ctx context.Context, sr Series) (sm probe.Sample) {
+	defer func() {
+		if v := recover(); v != nil {
+			if s.Logger != nil {
+				s.Logger.Error("probe panic", "series", sr.ID, "panic", v, "stack", string(debug.Stack()))
+			}
+			sm = probe.Sample{Result: probe.Fail, ErrClass: probe.ClassLocal, Detail: fmt.Sprintf("panic: %v", v)}
+		}
+	}()
+	return sr.P.Run(ctx)
 }
 
 // nextSlot returns the first grid slot after now, starting from prev.

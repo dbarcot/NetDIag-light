@@ -49,7 +49,7 @@ Rules (from `CLAUDE.md`): finish phases in order; tests are written during the p
 **Build**
 - `probe.Probe` interface (`Run(ctx) Sample`), `Sample` type (ok / fail / skipped, RTT, error class, timestamp).
 - ICMP prober via `IcmpSendEcho2` (+ TTL and DF options needed later); RTT from monotonic clock; reply buffer sized per SPEC §5 note; startup loopback baseline ("timer overhead").
-- `internal/stats`: loss, avg/best/worst, stdev, RFC 3550 jitter, E-model MOS (formula in SPEC §7).
+- `internal/stats`: loss, avg/best/worst, stdev, jitter (mean |ΔRTT| of consecutive ok samples, SPEC §7), E-model MOS (formula in SPEC §7).
 - `internal/store`: per-series ring buffer (history) + rolling window stats; reset.
 - `internal/sched`: per-target interval, random start offset, max one in flight per target, pause/resume hook for gates, injected clock.
 

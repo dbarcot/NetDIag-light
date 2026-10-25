@@ -34,12 +34,16 @@ type Adapter struct {
 	Name        string // friendly name, e.g. "Wi-Fi"
 	Description string
 	Type        AdapterType
-	Up          bool // OperStatus == up
-	MAC         net.HardwareAddr
-	MTU         uint32
-	IPv4        []netip.Prefix // unicast addresses with on-link prefix length
-	Gateways    []netip.Addr   // IPv4 default gateways
-	DNSServers  []netip.Addr   // IPv4 DNS servers
+	// Hardware is set for a real NIC (MIB_IF_ROW2: HardwareInterface and
+	// ConnectorPresent). Hyper-V/WSL/Docker vEthernet and VirtualBox/VMware
+	// host-only adapters report type ethernet but are not hardware.
+	Hardware   bool
+	Up         bool // OperStatus == up
+	MAC        net.HardwareAddr
+	MTU        uint32
+	IPv4       []netip.Prefix // unicast addresses with on-link prefix length
+	Gateways   []netip.Addr   // IPv4 default gateways
+	DNSServers []netip.Addr   // IPv4 DNS servers
 }
 
 // Route is the best route toward a destination (GetBestRoute2).

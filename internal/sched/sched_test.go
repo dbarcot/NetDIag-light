@@ -2,7 +2,9 @@ package sched
 
 import (
 	"context"
+	"log/slog"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -184,6 +186,119 @@ func TestScheduler_SlowProbeNeverOverlapsAndDropsMissedTicks(t *testing.T) {
 			t.Errorf("run times %v, want %v", times, want)
 			break
 		}
+	}
+}
+
+// A series whose probe hangs must not delay any other series. Run with
+// -race: the sink is called from both series goroutines.
+func TestScheduler_SeriesAreIndependent(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	var aStarted atomic.Bool
+	blocking := probe.Func(func(context.Context) probe.Sample {
+		aStarted.Store(true)
+		<-release
+		return probe.Sample{Result: probe.OK}
+	})
+	h := start(t, []Series{
+		{ID: "A", Interval: time.Second, P: blocking},
+		{ID: "B", Interval: time.Second, P: okProbe()},
+	}, 500*time.Millisecond)
+
+	h.clock.Advance(500 * time.Millisecond) // both fire at 0.5 s; A blocks
+	waitFor(t, aStarted.Load)
+	h.timers = 1 // only B parks from now on
+	h.waitParked()
+	h.step(5*time.Second, time.Second) // B at 1.5 … 5.5 s while A hangs
+
+	var bTimes []time.Duration
+	for _, s := range h.sink.all() {
+		if s.Series == "A" {
+			t.Fatalf("A emitted while its probe was still running: %+v", s)
+		}
+		bTimes = append(bTimes, s.Time.Sub(t0))
+	}
+	if len(bTimes) != 6 {
+		t.Fatalf("B emitted %d samples during A's 5 s hang, want 6 (0.5 … 5.5 s): %v", len(bTimes), bTimes)
+	}
+	for i, d := range bTimes {
+		if want := 500*time.Millisecond + time.Duration(i)*time.Second; d != want {
+			t.Errorf("B sample %d at %v, want %v", i, d, want)
+		}
+	}
+
+	close(release)
+	waitFor(t, func() bool {
+		for _, s := range h.sink.all() {
+			if s.Series == "A" {
+				return s.Time.Equal(t0.Add(500 * time.Millisecond)) // stamped with its start time
+			}
+		}
+		return false
+	})
+	h.stop()
+}
+
+// lockedBuffer is an io.Writer safe for the logger in concurrent tests.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+func TestScheduler_ProbePanicBecomesLocalErrorAndSeriesContinues(t *testing.T) {
+	t.Parallel()
+	var runs atomic.Int32
+	p := probe.Func(func(context.Context) probe.Sample {
+		if runs.Add(1) == 1 {
+			panic("boom")
+		}
+		return probe.Sample{Result: probe.OK}
+	})
+	logs := &lockedBuffer{}
+	h := &harness{t: t, clock: clock.NewFake(t0), sink: &collector{}, done: make(chan struct{}), timers: 1}
+	s := New(h.clock)
+	s.Offset = func(time.Duration) time.Duration { return 500 * time.Millisecond }
+	s.Logger = slog.New(slog.NewTextHandler(logs, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	h.cancel = cancel
+	go func() { s.Run(ctx, []Series{{ID: "x", Interval: time.Second, P: p}}, h.sink.add); close(h.done) }()
+	h.waitParked()
+	h.step(3*time.Second, time.Second)
+	h.stop()
+
+	got := h.sink.all()
+	if len(got) != 3 {
+		t.Fatalf("got %d samples, want 3 (series must keep running): %+v", len(got), got)
+	}
+	if got[0].Result != probe.Fail || got[0].ErrClass != probe.ClassLocal || got[0].Detail != "panic: boom" {
+		t.Errorf("panic sample %+v", got[0])
+	}
+	if got[1].Result != probe.OK || got[2].Result != probe.OK {
+		t.Errorf("later samples %+v", got[1:])
+	}
+	if l := logs.String(); !strings.Contains(l, "probe panic") || !strings.Contains(l, "series=x") || !strings.Contains(l, "sched.(*Scheduler).runProbe") {
+		t.Errorf("panic not logged with stack: %q", l)
+	}
+}
+
+func TestScheduler_PanicWithoutLogger(t *testing.T) {
+	t.Parallel()
+	s := New(clock.NewFake(t0))
+	sm := s.runProbe(context.Background(), Series{ID: "x", P: probe.Func(func(context.Context) probe.Sample { panic(42) })})
+	if sm.Result != probe.Fail || sm.Detail != "panic: 42" {
+		t.Errorf("got %+v", sm)
 	}
 }
 

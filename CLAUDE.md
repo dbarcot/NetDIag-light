@@ -56,7 +56,7 @@ internal/probe/       probe interface + implementations (icmp, tcp, dns, stun, h
 internal/clock/       Clock interface (Now, timers, tickers), real clock, manual fake
 internal/sched/       scheduler: rates, start jitter, gate-aware pausing
 internal/store/       ring buffers per series, rolling-window stats
-internal/stats/       pure math: loss, jitter (RFC 3550), stdev, E-model MOS
+internal/stats/       pure math: loss, jitter (mean |ΔRTT|), stdev, E-model MOS
 internal/gate/        dependency layers, hysteresis, skipped state
 internal/verdict/     verdicts and info flags from gates + stats
 internal/console/     mtr-style TTY renderer, plain renderer, keys (raw stdin, mode restore)
@@ -77,7 +77,7 @@ Design rules:
 
 ## Commands
 
-Always with `CGO_ENABLED=0` (PowerShell: `$env:CGO_ENABLED='0'`); the machine default is 1.
+Always with `CGO_ENABLED=0` (PowerShell: `$env:CGO_ENABLED='0'`); the machine default is 1. Only the race detector needs cgo: `$env:CGO_ENABLED='1'; go test -race ./...` (run it after changes to concurrent code).
 
 ```
 go build -o netdiag.exe ./cmd/netdiag

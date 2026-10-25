@@ -20,6 +20,9 @@ func TestWin32StructLayouts(t *testing.T) {
 	}{
 		{"sizeof(SOCKADDR_INET)", unsafe.Sizeof(windows.RawSockaddrInet{}), 28},
 		{"sizeof(MIB_IPFORWARD_ROW2)", unsafe.Sizeof(windows.MibIpForwardRow2{}), 104},
+		{"sizeof(MIB_IF_ROW2)", unsafe.Sizeof(windows.MibIfRow2{}), 1352},
+		{"MIB_IF_ROW2.InterfaceAndOperStatusFlags", unsafe.Offsetof(windows.MibIfRow2{}.InterfaceAndOperStatusFlags), 1152},
+		{"MIB_IF_ROW2.OperStatus", unsafe.Offsetof(windows.MibIfRow2{}.OperStatus), 1156},
 		{"sizeof(MIB_IPNET_ROW2)", unsafe.Sizeof(nr), 88},
 		{"MIB_IPNET_ROW2.InterfaceIndex", unsafe.Offsetof(nr.InterfaceIndex), 28},
 		{"MIB_IPNET_ROW2.InterfaceLuid", unsafe.Offsetof(nr.InterfaceLuid), 32},

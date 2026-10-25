@@ -26,6 +26,23 @@ func TestAdapterType(t *testing.T) {
 	}
 }
 
+func TestHardwareFlags(t *testing.T) {
+	t.Parallel()
+	tests := map[uint8]bool{
+		0x00: false, // virtual (vEthernet, host-only)
+		0x01: false, // hardware without connector (e.g. virtual function)
+		0x04: false, // connector only
+		0x05: true,  // physical NIC
+		0x15: true,  // physical NIC, media disconnected (cable out): still hardware
+		0x02: false, // filter interface
+	}
+	for flags, want := range tests {
+		if got := hardwareFlags(flags); got != want {
+			t.Errorf("hardwareFlags(%#x) = %v, want %v", flags, got, want)
+		}
+	}
+}
+
 func TestFiletime64(t *testing.T) {
 	t.Parallel()
 	if got := filetime64(windows.Filetime{HighDateTime: 1, LowDateTime: 2}); got != 1<<32|2 {

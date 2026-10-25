@@ -32,26 +32,49 @@ func TestLossPct(t *testing.T) {
 	}
 }
 
-func TestJitter_RFC3550Sequence(t *testing.T) {
+// seq builds samples from RTTs in ms; a negative value is a failed sample, NaN a skipped one.
+func seq(vals ...float64) []probe.Sample {
+	out := make([]probe.Sample, len(vals))
+	for i, v := range vals {
+		switch {
+		case math.IsNaN(v):
+			out[i] = probe.Sample{Result: probe.Skipped}
+		case v < 0:
+			out[i] = probe.Sample{Result: probe.Fail}
+		default:
+			out[i] = probe.Sample{Result: probe.OK, RTT: ms(v)}
+		}
+	}
+	return out
+}
+
+func TestJitter_MeanAbsoluteDifference(t *testing.T) {
 	t.Parallel()
-	// RTTs 10, 14, 10, 10: D = 4, 4, 0
-	// J1 = 0 + (4−0)/16       = 0.25
-	// J2 = 0.25 + (4−0.25)/16 = 0.484375
-	// J3 = 0.484375 + (0−0.484375)/16 = 0.4541015625
+	skip := math.NaN()
 	tests := []struct {
-		rtts []float64
-		want float64
+		name    string
+		samples []probe.Sample
+		want    float64
+		ok      bool
 	}{
-		{nil, 0},
-		{[]float64{10}, 0},
-		{[]float64{10, 14}, 0.25},
-		{[]float64{10, 14, 10}, 0.484375},
-		{[]float64{10, 14, 10, 10}, 0.4541015625},
-		{[]float64{20, 20, 20, 20}, 0},
+		// constant |D| = 5: exact from the second pair on (no start-up bias)
+		{"constant |D|, 2 pairs", seq(10, 15, 10), 5, true},
+		{"constant |D|, many pairs", seq(10, 15, 20, 25, 20, 15), 5, true},
+		{"alternating 10/30 ms", seq(10, 30, 10, 30, 10, 30, 10), 20, true},
+		{"flat", seq(20, 20, 20, 20), 0, true},
+		// pairs: (10,14)=4, then a failure breaks the chain, (30,30)=0, (30,32)=2 → 6/3 = 2
+		{"gap across a failure is ignored", seq(10, 14, -1, 30, 30, 32), 2, true},
+		// (10,14)=4, skipped breaks, (50,52)=2 → 3
+		{"gap across a skipped sample is ignored", seq(10, 14, skip, 50, 52), 3, true},
+		{"single ok sample: unknown", seq(10), 0, false},
+		{"one pair: unknown", seq(10, 14), 0, false},
+		{"no usable pair: unknown", seq(10, -1, 14, skip, 30), 0, false},
+		{"empty: unknown", nil, 0, false},
 	}
 	for _, tt := range tests {
-		if got := Jitter(tt.rtts); !near(got, tt.want, eps) {
-			t.Errorf("Jitter(%v) = %v, want %v", tt.rtts, got, tt.want)
+		got, ok := Jitter(tt.samples)
+		if ok != tt.ok || !near(got, tt.want, eps) {
+			t.Errorf("%s: Jitter = %v, %v; want %v, %v", tt.name, got, ok, tt.want, tt.ok)
 		}
 	}
 }
@@ -140,10 +163,23 @@ func TestSummarize(t *testing.T) {
 		t.Errorf("counts %+v", s)
 	}
 	// RTTs 10, 14, 10, 10: avg 11, best 10, worst 14, last 10,
-	// stdev sqrt(((−1)²+3²+(−1)²+(−1)²)/4) = sqrt(3), jitter as in TestJitter
+	// stdev sqrt(((−1)²+3²+(−1)²+(−1)²)/4) = sqrt(3)
 	if !s.HasRTT || !near(s.Avg, 11, eps) || s.Best != 10 || s.Worst != 14 || s.Last != 10 ||
-		!near(s.StdDev, math.Sqrt(3), eps) || !near(s.Jitter, 0.4541015625, eps) {
+		!near(s.StdDev, math.Sqrt(3), eps) {
 		t.Errorf("rtt stats %+v", s)
+	}
+	// only one pair of consecutive ok samples (10, 10): jitter unknown
+	if s.HasJitter {
+		t.Errorf("jitter must be unknown with one usable pair: %+v", s)
+	}
+}
+
+func TestSummarize_Jitter(t *testing.T) {
+	t.Parallel()
+	s := Summarize(seq(10, 30, 10, -1, 30, 10))
+	// pairs (10,30)=20, (30,10)=20, failure, (30,10)=20 → 20
+	if !s.HasJitter || !near(s.Jitter, 20, eps) {
+		t.Errorf("jitter %v (known %v), want 20", s.Jitter, s.HasJitter)
 	}
 }
 
