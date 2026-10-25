@@ -19,7 +19,10 @@ Unit and scenario tests must be deterministic: injected clock, no sleeps longer 
 
 Every OS/network boundary has an interface and a fake in the same package (`fake.go`, no build tag):
 
-- `sysapi.Adapters`, `sysapi.Routes`, `sysapi.ARP`, `sysapi.WiFi`, `sysapi.Console`
+- `sysapi.Adapters`, `sysapi.Routes`, `sysapi.ARP`, `sysapi.WiFi`, `sysapi.CPU`, `sysapi.Changes`, `sysapi.Console` (bundled as `sysapi.System`; `sysapi.NewSystem()` is the real one)
+- Wi-Fi assembly logic is tested against a fake raw WLAN API (`wlanAPI`), so location-privacy denials are covered without a Wi-Fi adapter
+- Hand-written Win32 structs (`MIB_IPNET_ROW2`, `INPUT_RECORD`, WLAN structs) have size/offset tests
+- Real console modes are tested by re-running the test binary in a new hidden console (`CREATE_NEW_CONSOLE`), which also checks double-click detection (process count 1)
 - `probe.ICMP` (send echo with TTL/DF/size), `probe.Dialer` (TCP), `probe.Resolver` (system DNS)
 - `clock.Clock` (`Now`, `NewTimer`, `NewTicker`) with a manual fake that advances explicitly
 

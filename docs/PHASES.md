@@ -39,8 +39,8 @@ Rules (from `CLAUDE.md`): finish phases in order; tests are written during the p
 - Integration (`-tags integration`, real Windows): best route returns an adapter and gateway; adapters list non-empty; Wi-Fi query either returns data or a clean "no Wi-Fi" result; no panics without admin.
 
 **Acceptance**
-- [ ] A debug subcommand-free test program or integration test prints real sysinfo on a dev machine
-- [ ] Unit + integration tests pass
+- [x] A debug subcommand-free test program or integration test prints real sysinfo on a dev machine (`go test -tags integration -v -run Sysinfo ./internal/sysapi/`)
+- [x] Unit + integration tests pass
 
 ---
 
