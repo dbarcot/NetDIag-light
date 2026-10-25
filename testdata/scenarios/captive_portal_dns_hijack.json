@@ -1,0 +1,18 @@
+{
+  "name": "captive_portal_dns_hijack",
+  "description": "Captive portal that lets ICMP through (L4 opens) but intercepts DNS: public resolvers fail and the system resolver's test query fails (L5 closes); HTTP-01 is still redirected, so CAPTIVE_PORTAL wins over DNS_FAIL",
+  "duration_s": 40,
+  "sysinfo": {
+    "adapter": { "name": "Wi-Fi", "type": "wifi", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"],
+    "wifi": { "ssid": "Hotel", "signal_pct": 78, "band": "5GHz", "channel": 36 }
+  },
+  "rules": [
+    { "probes": ["NET-04", "RT-01", "DNS-01", "DNS-02"], "result": "fail" },
+    { "probe": "HTTP-01", "result": "captive" }
+  ],
+  "expect": [
+    { "at_s": 30, "verdict": "CAPTIVE_PORTAL", "exit_code": 14, "gates": { "L4": "open", "L5": "closed" } }
+  ]
+}

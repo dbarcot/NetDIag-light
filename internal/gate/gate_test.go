@@ -30,7 +30,7 @@ var testSeries = []Series{
 	{ID: lan02, Interval: 5 * time.Second, Requires: L2, Defines: L3, NeedsGateway: true},
 	{ID: net01a, Interval: time.Second, Requires: L3, Defines: L4, L3Evidence: true},
 	{ID: net01b, Interval: time.Second, Requires: L3, Defines: L4, L3Evidence: true},
-	{ID: net04, Interval: time.Second, Requires: L3, Defines: L4, L3Evidence: true},
+	{ID: net04, Interval: time.Second, Requires: L3, Defines: L4, L3Evidence: true, L3Recovery: true},
 	{ID: dnsOn, Interval: 5 * time.Second, Requires: L3, Defines: L5},
 	{ID: dnsRem, Interval: 5 * time.Second, Requires: L4, Defines: L5},
 	{ID: dns02, Interval: 5 * time.Second, Requires: L4},
@@ -64,10 +64,11 @@ var gwDown = []feed{fail(lan01), fail(net01a), fail(net01b), fail(net04)}
 func ok(id string) feed   { return feed{id, probe.OK} }
 func fail(id string) feed { return feed{id, probe.Fail} }
 
-// now records samples at the current time and runs the gate tick.
+// now records samples at the current time and runs the gate tick. Like
+// the engine, it marks samples of a recovering series as Recovery.
 func (f *fixture) now(feeds ...feed) {
 	for _, fd := range feeds {
-		f.g.Observe(probe.Sample{Series: fd.id, Time: f.clock.Now(), Result: fd.r})
+		f.g.Observe(probe.Sample{Series: fd.id, Time: f.clock.Now(), Result: fd.r, Recovery: f.g.Recovering(fd.id)})
 	}
 	f.g.Tick()
 }
@@ -422,5 +423,82 @@ func TestLayerAndStateStrings(t *testing.T) {
 	t.Parallel()
 	if L3.String() != "L3" || None.String() != "none" || Closed.String() != "closed" || Unknown.String() != "unknown" {
 		t.Error("strings")
+	}
+}
+
+// A gateway that ignores ping and whose ARP entry is only stale: after an
+// outage closed L3, NET-04 keeps running as a recovery probe and reopens
+// L3 through the internet (SPEC §6 L3 recovery).
+func TestGates_L3RecoversThroughNET04(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.openAll()
+	f.now(fail(lan02)) // stale ARP
+	for range 3 {
+		f.second(gwDown...)
+	}
+	f.want(L3, Closed)
+	f.wantDecision(net04, sched.Run, "") // recovery probe
+	f.wantDecision(net01a, sched.Skip, ReasonGatewayDown)
+	if !f.g.Recovering(net04) || f.g.Recovering(net01a) {
+		t.Fatal("only NET-04 is a recovery series")
+	}
+	for range 5 { // recovery failures never reopen anything
+		f.second(fail(lan01), fail(net04))
+		f.want(L3, Closed)
+	}
+	f.second(fail(lan01), ok(net04))
+	f.second(fail(lan01), ok(net04))
+	f.want(L3, Closed) // 2 successes
+	f.second(fail(lan01), ok(net04))
+	f.want(L3, Open)
+	f.want(L4, Unknown) // recovery samples are no L4 evidence
+	if f.g.Recovering(net04) {
+		t.Fatal("NET-04 still recovering with L3 open")
+	}
+	f.wantDecision(net04, sched.Run, "") // a normal L4 probe again
+	f.now(ok(net04))
+	f.want(L4, Open)
+}
+
+// Recovery failures alone never close L3: they are L3 evidence, not
+// L3-defining.
+func TestGates_RecoveryFailuresDoNotDefineL3(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.g.SetLink(goodLink)
+	for range 6 {
+		f.second(fail(net04))
+		f.want(L3, Unknown)
+	}
+}
+
+// At start-up (L3 unknown) NET-04 runs as a recovery probe too, so a
+// gateway that ignores ping and has a stale ARP entry opens L3 at once.
+func TestGates_RecoveryAtStartup(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.g.SetLink(goodLink)
+	f.wantDecision(net04, sched.Run, "")
+	f.wantDecision(net01a, sched.Wait, "")
+	f.now(fail(lan01), fail(lan02), ok(net04))
+	f.want(L3, Open)
+	f.want(L4, Unknown)
+}
+
+// Recovery needs a gateway route: on-link and no-route modes decide L3
+// without evidence, and a closed L2 stops everything.
+func TestGates_NoRecoveryWithoutGatewayRoute(t *testing.T) {
+	t.Parallel()
+	for _, l := range []Link{
+		{Up: true, Address: sysapi.AddressOK, Route: RouteNone, HasDNS: true},
+		{Up: true, Address: sysapi.AddressAPIPA, Route: RouteGateway, HasDNS: true},
+		{Up: false},
+	} {
+		f := newFixture(t)
+		f.g.SetLink(l)
+		if f.g.Recovering(net04) || f.g.Decision(net04).Action != sched.Skip {
+			t.Errorf("%+v: NET-04 %+v, want skip", l, f.g.Decision(net04))
+		}
 	}
 }

@@ -29,7 +29,7 @@ func Jitter(samples []probe.Sample) (jitterMs float64, ok bool) {
 	sum, pairs := 0.0, 0
 	for i := 1; i < len(samples); i++ {
 		a, b := samples[i-1], samples[i]
-		if a.Result != probe.OK || b.Result != probe.OK {
+		if a.Result != probe.OK || b.Result != probe.OK || a.Recovery || b.Recovery {
 			continue
 		}
 		sum += math.Abs(b.RTTms() - a.RTTms())
@@ -97,11 +97,15 @@ type Summary struct {
 }
 
 // Summarize computes a Summary over samples ordered oldest first. Last is
-// the RTT of the newest ok sample.
+// the RTT of the newest ok sample. Recovery samples count as skipped.
 func Summarize(samples []probe.Sample) Summary {
 	var s Summary
 	rtts := make([]float64, 0, len(samples))
 	for _, sm := range samples {
+		if sm.Recovery {
+			s.Skipped++
+			continue
+		}
 		switch sm.Result {
 		case probe.OK:
 			s.OK++

@@ -166,9 +166,12 @@ func TestEvaluate_Healthy(t *testing.T) {
 	}
 }
 
+const httpCheck = "HTTP-01:http://www.msftconnecttest.com/connecttest.txt"
+
 func TestEvaluate_GateVerdicts(t *testing.T) {
 	t.Parallel()
 	lan := healthy()
+	captive := series(httpCheck, "oc", 0)
 	tests := []struct {
 		name string
 		in   Input
@@ -184,6 +187,15 @@ func TestEvaluate_GateVerdicts(t *testing.T) {
 		{"L3 unknown", gates(lan, gate.L3, gate.Unknown), Checking},
 		{"L1 unknown", gates(lan, gate.L1, gate.Unknown), Checking},
 		{"L5 unknown is not CHECKING", gates(lan, gate.L5, gate.Unknown), OK},
+		// a captive portal usually blocks the internet and often DNS
+		{"captive with L4 closed", with(gates(lan, gate.L4, gate.Closed), captive), CaptivePortal},
+		{"captive with L4 unknown", with(gates(lan, gate.L4, gate.Unknown), captive), CaptivePortal},
+		{"captive with L5 closed, public DNS ok", with(gates(lan, gate.L5, gate.Closed), captive), CaptivePortal},
+		{"captive with L5 closed, public DNS fails", with(gates(lan, gate.L5, gate.Closed), captive, series("DNS-02:1.1.1.1", "ooff", 0)), CaptivePortal},
+		{"L3 closed outranks captive", with(gates(lan, gate.L3, gate.Closed), captive), GWUnreachable},
+		{"L3 unknown outranks captive", with(gates(lan, gate.L3, gate.Unknown), captive), Checking},
+		{"HTTP-01 DNS failure is not captive", with(gates(lan, gate.L4, gate.Closed), series(httpCheck, "ddd", 0)), ISPDown},
+		{"old captive result followed by ok", with(gates(lan, gate.L4, gate.Closed), series(httpCheck, "cco", 0)), ISPDown},
 		{"lowest closed gate wins", func() Input {
 			i := gates(lan, gate.L4, gate.Closed)
 			i.Gates[gate.L3] = gate.Status{State: gate.Closed}
@@ -218,7 +230,10 @@ func TestEvaluate_NetworkVerdicts(t *testing.T) {
 		{"Meet UDP blocked", with(h, series("MEET-01:stun.l.google.com:19302", "fff", 0)), MeetUDPBlocked, ""},
 		{"MTU issue", with(h, value("MTU-01:1.1.1.1", 1380)), MTUIssue, "path MTU 1380 to 1.1.1.1"},
 		{"MTU at the threshold is fine", with(h, value("MTU-01:1.1.1.1", 1400)), OK, ""},
-		{"LAN loss", with(h, series("LAN-01:gateway", lossy, 1)), LANLoss, ""},
+		{"LAN loss", with(h, series("LAN-01:gateway", lossy, 1), series("NET-01:1.1.1.1", lossy, 12), series("NET-01:8.8.8.8", lossy, 13)), LANLoss, ""},
+		{"LAN loss: internet loss at half the LAN loss", with(h, series("LAN-01:gateway", "oooofoooofoooofoooof", 1),
+			series("NET-01:1.1.1.1", lossy, 12), series("NET-01:8.8.8.8", lossy, 13)), LANLoss, ""},
+		{"lossy gateway pings with a clean internet are not LAN loss", with(h, series("LAN-01:gateway", lossy, 1)), OK, ""},
 		{"ISP loss", with(h, series("NET-01:1.1.1.1", lossy, 12), series("NET-01:8.8.8.8", lossy, 13)), ISPLoss, ""},
 		{"loss on one internet target is not ISP loss", with(h, series("NET-01:1.1.1.1", lossy, 12)), OK, ""},
 		{"loss below min_samples is not judged", with(h, series("LAN-01:gateway", "oof", 1)), OK, ""},
@@ -392,5 +407,38 @@ func TestExitCodesAndRank(t *testing.T) {
 	}
 	if NoLink.Rank() >= OK.Rank() || OK.Rank() >= Checking.Rank() {
 		t.Error("rank order")
+	}
+}
+
+// Gateway ping loss with a clean internet is ICMP rate limiting by the
+// router, not LAN loss (SPEC §8).
+func TestEvaluate_GatewayICMPRateLimited(t *testing.T) {
+	t.Parallel()
+	h := healthy()
+	lan20 := "oooofoooofoooofoooof" // 20 % loss
+	tests := []struct {
+		name    string
+		in      Input
+		want    Verdict
+		flagged bool
+	}{
+		{"clean internet", with(h, series("LAN-01:gateway", lan20, 1)), OK, true},
+		{"internet loss below half and threshold", with(h, series("LAN-01:gateway", lan20, 1),
+			series("NET-01:1.1.1.1", "ooooooooooooooooooooooooooooooooooooooof", 12), // 2.5 %: > threshold 2
+			series("NET-01:8.8.8.8", okRun, 13)), OK, true},
+		{"one internet target lossy, the other clean", with(h, series("LAN-01:gateway", lan20, 1),
+			series("NET-01:1.1.1.1", "ooooofoooooo", 12)), OK, true},
+		{"every internet target lossy", with(h, series("LAN-01:gateway", lan20, 1),
+			series("NET-01:1.1.1.1", "ooooofoooooo", 12), series("NET-01:8.8.8.8", "ooooofoooooo", 13)), LANLoss, false},
+		{"internet target without enough samples: undecided", with(h, series("LAN-01:gateway", lan20, 1),
+			series("NET-01:1.1.1.1", "ooo", 12)), OK, false},
+		{"gateway ignoring ping is not rate limited", with(h, series("LAN-01:gateway", "ffffffffffff", 1)), OK, false},
+		{"clean gateway", h, OK, false},
+	}
+	for _, tt := range tests {
+		r := Evaluate(tt.in)
+		if r.Verdict != tt.want || slices.Contains(r.Flags, FlagGWICMPRateLimited) != tt.flagged {
+			t.Errorf("%s: %s %v, want %s flag %v", tt.name, r.Verdict, r.Flags, tt.want, tt.flagged)
+		}
 	}
 }

@@ -7,6 +7,6 @@
     "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
     "dns_servers": ["192.168.1.1"]
   },
-  "rules": [ { "probes": ["DNS-01", "DNS-02"], "from_s": 10, "result": "fail" } ],
+  "rules": [ { "probes": ["DNS-01", "DNS-02"], "from_s": 10, "result": "fail" }, { "probe": "HTTP-01", "from_s": 10, "result": "dns" } ],
   "expect": [ { "at_s": 35, "verdict": "DNS_FAIL", "exit_code": 17 } ]
 }

@@ -96,6 +96,10 @@ type Series struct {
 	L3Evidence bool
 	// NeedsGateway marks LAN-01/LAN-02: skipped without a gateway.
 	NeedsGateway bool
+	// L3Recovery marks NET-04: it keeps running while L3 is not open with
+	// a gateway route, so a gateway that ignores ping and whose ARP entry
+	// is only stale can still reopen L3 through the internet (SPEC §6).
+	L3Recovery bool
 }
 
 // RouteMode says how L3 is decided.
@@ -238,6 +242,12 @@ func (g *Gates) Observe(s probe.Sample) {
 		}
 		return
 	}
+	if s.Recovery {
+		if sp.L3Evidence {
+			g.evidence[L3][s.Series] = s
+		}
+		return
+	}
 	if sp.Defines != None {
 		g.evidence[sp.Defines][s.Series] = s
 	}
@@ -358,12 +368,25 @@ func (g *Gates) normalize() {
 	}
 }
 
+// Recovering reports whether a sample of series id taken now is an L3
+// recovery run: an L3Recovery series while L1/L2 are open, the route goes
+// through a gateway and L3 is not open (closed, or unknown at start-up and
+// after a reset). Such samples are L3 evidence only (SPEC §6).
+func (g *Gates) Recovering(id string) bool {
+	sp, ok := g.series[id]
+	return ok && sp.L3Recovery && g.status[L1].State == Open && g.status[L2].State == Open &&
+		g.link.Route == RouteGateway && g.status[L3].State != Open
+}
+
 // Decision tells the scheduler what a series may do now: skip with the
 // reason of the lowest closed layer it requires, wait while one of them is
-// unknown, otherwise run.
+// unknown, otherwise run. An L3 recovery series runs while L3 is not open.
 func (g *Gates) Decision(id string) sched.Decision {
 	sp, ok := g.series[id]
 	if !ok {
+		return sched.Decision{Action: sched.Run}
+	}
+	if g.Recovering(id) {
 		return sched.Decision{Action: sched.Run}
 	}
 	for l := L1; l <= sp.Requires; l++ {

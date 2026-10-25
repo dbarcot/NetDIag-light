@@ -41,6 +41,10 @@ type Sample struct {
 	From     netip.Addr    // responder, e.g. a trace hop
 	ErrClass string        // failures only
 	Detail   string        // error detail or "skipped: <reason>"
+	// Recovery marks a NET-04 run taken while L3 is not open (SPEC §6 L3
+	// recovery): it is L3 evidence only, never L4 evidence, and it is left
+	// out of loss and RTT statistics like a skipped sample.
+	Recovery bool
 }
 
 // RTTms returns the RTT in milliseconds.

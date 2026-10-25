@@ -79,7 +79,8 @@ func BuildSeries(cfg *config.Config, p sysapi.Primary) []Spec {
 	for _, ip := range t.InternetICMP {
 		add("NET-01:"+ip, "NET-01", ip, sec(r.InternetICMP), gate.L3, gate.L4).L3Evidence = true
 	}
-	add("NET-04:"+t.InternetTCP, "NET-04", t.InternetTCP, sec(r.InternetTCP), gate.L3, gate.L4).L3Evidence = true
+	net04 := add("NET-04:"+t.InternetTCP, "NET-04", t.InternetTCP, sec(r.InternetTCP), gate.L3, gate.L4)
+	net04.L3Evidence, net04.L3Recovery = true, true
 	// RT-01 defines L4, so it cannot wait for DNS: an unresolved STUN name
 	// is recorded as skipped by the probe (SPEC §6).
 	for _, s := range t.STUN {
@@ -98,8 +99,11 @@ func BuildSeries(cfg *config.Config, p sysapi.Primary) []Spec {
 	}
 	add("NAT-01:stun", "NAT-01", "stun", sec(r.NAT), gate.L4, gate.None)
 
+	// HTTP-01 needs only L3: a captive portal blocks almost everything
+	// except DNS and HTTP to itself, so L4/L5 may well be closed. The probe
+	// resolves its host itself; a DNS failure is a plain failure (SPEC §6).
 	for _, h := range t.HTTPCheck {
-		add("HTTP-01:"+h.URL, "HTTP-01", h.URL, sec(r.HTTP), gate.L5, gate.None)
+		add("HTTP-01:"+h.URL, "HTTP-01", h.URL, sec(r.HTTP), gate.L3, gate.None)
 	}
 	for _, s := range t.Services {
 		add("SVC-01:"+s, "SVC-01", s, sec(r.Services), gate.L5, gate.None)

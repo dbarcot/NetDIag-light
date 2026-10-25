@@ -70,7 +70,7 @@ func TestBuildSeries_Catalog(t *testing.T) {
 		{"DNS-01:192.168.1.1", gate.L3, gate.L5, false, 5 * time.Second}, // on-link resolver
 		{"DNS-01:10.9.9.9", gate.L4, gate.L5, false, 5 * time.Second},    // remote resolver
 		{"DNS-02:8.8.8.8", gate.L4, gate.None, false, 5 * time.Second},
-		{"HTTP-01:http://www.msftconnecttest.com/connecttest.txt", gate.L5, gate.None, false, 15 * time.Second},
+		{"HTTP-01:http://www.msftconnecttest.com/connecttest.txt", gate.L3, gate.None, false, 15 * time.Second}, // captive portal: L3 only
 		{"SVC-01:meet.google.com", gate.L5, gate.None, false, 30 * time.Second},
 		{"MTU-01:gateway", gate.L3, gate.None, false, 600 * time.Second},
 		{"MTU-01:1.1.1.1", gate.L4, gate.None, false, 600 * time.Second},
@@ -191,5 +191,36 @@ func TestEngine_WiFiOfPrimaryAndCPUAverage(t *testing.T) {
 	c.Advance(10 * time.Second)
 	if slices.Contains(e.Snapshot().Result.Flags, verdict.FlagCPUHigh) {
 		t.Error("CPU_HIGH must use only the last 10 s")
+	}
+}
+
+// NET-04 samples taken while L3 is not open are marked Recovery: they
+// reopen L3 but are not L4 evidence and not part of the loss stats.
+func TestEngine_MarksRecoverySamples(t *testing.T) {
+	t.Parallel()
+	e, c := newEngine(t)
+	e.SetSystem(system(wifiAdapter("192.168.1.23/24", "192.168.1.1"), "192.168.1.1"))
+	e.SetSeries(BuildSeries(config.Default(), e.Primary()))
+	const net04 = "NET-04:1.1.1.1:443"
+	if d := e.Decision(net04); d.Action != sched.Run {
+		t.Fatalf("NET-04 decision %+v, want run (L3 recovery)", d)
+	}
+	e.OnSample(probe.Sample{Series: net04, Time: c.Now(), Result: probe.OK, RTT: 20 * time.Millisecond})
+	e.Tick()
+	h := e.Store().History(net04)
+	if len(h) != 1 || !h[0].Recovery {
+		t.Fatalf("history %+v, want one recovery sample", h)
+	}
+	s := e.Snapshot()
+	if s.Gates[gate.L3].State != gate.Open || s.Gates[gate.L4].State != gate.Unknown {
+		t.Errorf("L3 %s L4 %s, want open/unknown", s.Gates[gate.L3].State, s.Gates[gate.L4].State)
+	}
+	if st := e.Store().Stats(net04); st.Sent != 0 {
+		t.Errorf("recovery sample counted: %+v", st)
+	}
+	c.Advance(time.Second)
+	e.OnSample(probe.Sample{Series: net04, Time: c.Now(), Result: probe.OK, RTT: 20 * time.Millisecond})
+	if h := e.Store().History(net04); h[len(h)-1].Recovery {
+		t.Error("sample with L3 open marked recovery")
 	}
 }

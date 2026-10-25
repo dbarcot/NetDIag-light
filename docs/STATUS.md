@@ -4,7 +4,7 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 
 ## Current state
 
-- **Last completed phase:** 3 — gates, verdicts, simulation mode (`c21a8be`). Phase 3 has not been reviewed yet.
+- **Last completed phase:** 3 — gates, verdicts, simulation mode (`c21a8be`), plus Phase 3 review fixes (captive portal with L4/L5 closed, gateway ICMP rate limiting, L3 recovery via NET-04).
 - **Next phase:** 4 — remaining probes (TCP, DNS-01/02, STUN/NAT, HTTP-01, SVC-01, MTU-01, TRC-01, custom targets) and wiring them into scheduler + gates.
 - `netdiag run` without `--sim` still only loads the config and prints "Probing is not implemented in this build yet".
 
@@ -19,6 +19,7 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 | 2 | `1c1a33b` | clock (fake), probe Sample + ICMP (`IcmpSendEcho2`), stats, store, scheduler |
 | 2 fixes | `48c5645` | Window jitter = mean \|ΔRTT\|, series independence + panic recovery, hardware-only fallback, ICMP min timeout |
 | 3 | `c21a8be` | gate L1–L5, verdict + flags + exit codes, engine (series catalog), sim (35 scenarios), `run --sim` |
+| 3 fixes | see git log | HTTP-01 at L3 + `CAPTIVE_PORTAL` over ISP/DNS verdicts, `GW_ICMP_RATE_LIMITED`, NET-04 L3 recovery (`Sample.Recovery`), 4 new scenarios (39) |
 
 ### Key decisions and SPEC deviations
 
@@ -26,10 +27,11 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 - **Phase 1:** primary adapter = best-route adapter, else hardware ethernet/Wi-Fi fallback (§5 LINK-01). Only ARP Reachable/Permanent count; stale = unconfirmed (§5 LAN-02, §6 L3). L3 also opens from L4 traffic (§6). Wi-Fi `band_source`; `WIFI_24GHZ` only when the band comes from the frequency (§5 WIFI-01). Change notifications with polling fallback that includes the best route (§5).
 - **Phase 2:** **RTT is timed with QueryPerformanceCounter**, not Go's monotonic clock (§5 RTT). Scheduler: fixed grid, start offset [0, min(interval, 1 s)), missed ticks dropped, shutdown run emits nothing, panic → `local_error` (§5). Jitter = mean of \|RTT_i − RTT_{i−1}\| over consecutive ok samples, unknown below 2 pairs (§7). StDev population.
 - **Phase 3:** gate rounds by a 1 s tick, one round per layer period from fresh evidence (≤ 1.5 × interval) instead of a pacer series (§6). Wait retries after min(interval, 1 s) (§6 start-up). L1/L2 without hysteresis; closing a layer makes the ones above unknown (§6). RT-01 with an unresolved STUN name → skipped (§6). Settled loss for `LAN_LOSS`/`ISP_LOSS`; `GW_ICMP_BLOCKED` needs internet working *now* (§8). Call-quality source rules (§8). `run --sim` uses defaults + scenario config, plain output (§3). New package `internal/engine` (CLAUDE.md layout).
+- **Phase 3 fixes:** HTTP-01 requires L3 only; `CAPTIVE_PORTAL` wins over `ISP_DOWN`/`DNS_*` in any L4/L5 state (also L4 unknown), L1–L3 must be open (§6, §8). `LAN_LOSS` needs every NET-01 target lossy too (≥ half the LAN loss or > threshold), else flag `GW_ICMP_RATE_LIMITED`; undecided while NET-01 lacks `min_samples` (§8). NET-04 runs as an L3 recovery probe whenever L3 is **not open** (closed, and also unknown at start-up/reset — extension of the review request, avoids a false `GW_UNREACHABLE`/exit 13 at start with an ICMP-blocking gateway); its samples carry `Recovery=true` and count as skipped in stats/verdicts (§6). During a full outage behind such a gateway the verdict is `GW_UNREACHABLE` (nothing proves the gateway alive).
 
 ## Open items
 
-- **Review fixes pending:** none (Phase 1 and Phase 2 review lists are done). Phase 3 not reviewed yet.
+- **Review fixes pending:** none (Phase 1–3 review lists are done). Next item: Phase 4.
 - **Wiring still missing (Phase 4+):** real LAN-02 / SYS-01 / LINK-01 / WIFI-01 probes into the engine; TCP, DNS, STUN, NAT, HTTP, SVC, MTU, TRC probes; TRC-01 is not in the series catalog yet; RT-01 must record "name not resolved" as skipped; `CSV_WRITE_ERROR` is only set by sim events until Phase 6.
 - **Known limitations:**
   - `sim.Live` (`run --sim`) resets gates on an adapter change but does not rebuild series (series restart is Phase 9).

@@ -1,12 +1,12 @@
 {
   "name": "lan_loss",
-  "description": "10 % packet loss to the gateway (bad Wi-Fi or cable)",
+  "description": "10 % packet loss to the gateway (bad Wi-Fi or cable); the internet targets lose as much, so it is real LAN loss",
   "duration_s": 50,
   "sysinfo": {
     "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
     "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
     "dns_servers": ["192.168.1.1"]
   },
-  "rules": [ { "probe": "LAN-01", "loss_pct": 10 } ],
+  "rules": [ { "probes": ["LAN-01", "NET-01"], "loss_pct": 10 } ],
   "expect": [ { "at_s": 40, "verdict": "LAN_LOSS", "exit_code": 23 } ]
 }

@@ -1,0 +1,23 @@
+{
+  "name": "gw_icmp_blocked_outage",
+  "description": "Gateway ignores ping and its ARP entry is only stale; the internet drops 20-60s. L3 closes (GW_UNREACHABLE: nothing can prove the gateway alive) and must reopen through NET-04 recovery runs once the internet is back",
+  "duration_s": 90,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [
+    { "probe": "LAN-01", "result": "fail" },
+    { "probe": "LAN-02", "arp_state": "stale" },
+    { "probes": ["NET-01", "NET-04", "RT-01"], "from_s": 20, "to_s": 60, "result": "fail" }
+  ],
+  "expect": [
+    { "at_s": 2, "gates": { "L3": "open" } },
+    { "at_s": 15, "verdict": "OK", "flags_include": ["GW_ICMP_BLOCKED"], "gates": { "L3": "open", "L4": "open" } },
+    { "at_s": 40, "verdict": "GW_UNREACHABLE", "exit_code": 13, "gates": { "L3": "closed" }, "skipped": ["NET-01", "RT-01"] },
+    { "at_s": 59, "verdict": "GW_UNREACHABLE", "gates": { "L3": "closed" } },
+    { "at_s": 64, "gates": { "L3": "open", "L4": "open" } },
+    { "at_s": 85, "verdict": "OK", "flags_include": ["GW_ICMP_BLOCKED"], "gates": { "L3": "open", "L4": "open", "L5": "open" } }
+  ]
+}

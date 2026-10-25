@@ -1,15 +1,15 @@
 {
   "name": "dns_local_fail",
-  "description": "The DNS server of the router stops answering at t=10s; public resolvers work",
+  "description": "The DNS server of the router stops answering at t=10s; public resolvers work; HTTP-01 (needs L3 only) keeps running and fails with class dns, which is not a captive portal",
   "duration_s": 40,
   "sysinfo": {
     "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
     "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
     "dns_servers": ["192.168.1.1"]
   },
-  "rules": [ { "probe": "DNS-01", "from_s": 10, "result": "fail" } ],
+  "rules": [ { "probe": "DNS-01", "from_s": 10, "result": "fail" }, { "probe": "HTTP-01", "from_s": 10, "result": "dns" } ],
   "expect": [
     { "at_s": 5, "verdict": "OK" },
-    { "at_s": 35, "verdict": "DNS_LOCAL_FAIL", "exit_code": 16, "gates": { "L5": "closed" }, "skipped": ["HTTP-01", "SVC-01"] }
+    { "at_s": 35, "verdict": "DNS_LOCAL_FAIL", "exit_code": 16, "gates": { "L5": "closed" }, "skipped": ["SVC-01"], "flags_exclude": ["SERVICE_UNREACHABLE"] }
   ]
 }

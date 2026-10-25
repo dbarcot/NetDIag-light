@@ -10,7 +10,7 @@ Read these before writing code:
 
 ## Golden rules
 
-0. At the start of every session read docs/STATUS.md first. At the end of every phase or fix task, update docs/STATUS.md (state, summary, decisions, open items) in the same commit. Keep it under ~150 lines; move detail into SPEC/PHASES, not STATUS.
+0. At the start of every session read docs/STATUS.md first. At the end of every phase or fix task, update docs/STATUS.md (state, summary, decisions, open items) in the same commit. Keep it under ~150 lines; move detail into SPEC/PHASES, not STATUS. If the user gives no specific task (e.g. just "continue" or "pokračuj"), do the next item from docs/STATUS.md: open review fixes first, then the next phase. Stop after that one item, update STATUS.md and commit.
 1. **Work strictly phase by phase** as listed in `docs/PHASES.md`. Do not start phase N+1 until every test of phase N passes and its acceptance checklist is ticked. At the end of each phase, stop and give a short summary: what was built, test results, any deviations from the spec.
 2. **Tests are written together with the code, never after the phase.** Prefer writing the test first for pure logic (stats, gates, verdicts, config). Every exported behavior has a test. A phase with failing, skipped or missing tests is not done.
 3. **Run the full check after every meaningful change**, not only at the end:

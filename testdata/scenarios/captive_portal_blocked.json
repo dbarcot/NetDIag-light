@@ -1,0 +1,19 @@
+{
+  "name": "captive_portal_blocked",
+  "description": "Hotel Wi-Fi before login: the portal blocks ICMP, TCP 443 and STUN; only DNS and HTTP to the portal work, so L4 closes but HTTP-01 (needs L3 only) sees the redirect",
+  "duration_s": 40,
+  "sysinfo": {
+    "adapter": { "name": "Wi-Fi", "type": "wifi", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"],
+    "wifi": { "ssid": "Hotel", "signal_pct": 78, "band": "5GHz", "channel": 36 }
+  },
+  "rules": [
+    { "probes": ["NET-01", "NET-04", "RT-01"], "result": "fail" },
+    { "probe": "HTTP-01", "result": "captive" }
+  ],
+  "expect": [
+    { "at_s": 10, "verdict": "CAPTIVE_PORTAL", "exit_code": 14, "gates": { "L3": "open", "L4": "closed" }, "skipped": ["DNS-02"] },
+    { "at_s": 35, "verdict": "CAPTIVE_PORTAL", "exit_code": 14, "gates": { "L4": "closed" } }
+  ]
+}

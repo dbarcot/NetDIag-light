@@ -1,0 +1,14 @@
+{
+  "name": "gw_icmp_rate_limited",
+  "description": "Home router drops 20 % of pings to itself under load while forwarding traffic fine (NET-01 clean): info flag, no LAN_LOSS",
+  "duration_s": 50,
+  "sysinfo": {
+    "adapter": { "name": "Ethernet", "type": "ethernet", "up": true, "ipv4": "192.168.1.23/24" },
+    "gateway": { "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff" },
+    "dns_servers": ["192.168.1.1"]
+  },
+  "rules": [ { "probe": "LAN-01", "loss_pct": 20 } ],
+  "expect": [
+    { "at_s": 40, "verdict": "OK", "exit_code": 0, "flags_include": ["GW_ICMP_RATE_LIMITED"], "flags_exclude": ["GW_ICMP_BLOCKED"] }
+  ]
+}

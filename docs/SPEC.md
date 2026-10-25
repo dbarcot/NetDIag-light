@@ -118,7 +118,7 @@ netdiag version
 
 Config shape: `targets.http_check` is an array of `{ "url": ..., "expect_status": <100–599>, "expect_body": "..." }` (`expect_body` optional, default empty).
 
-Redirects are **not** followed; a redirect (3xx) or a status/body mismatch from at least one check means captive portal. A network error or timeout is a plain probe failure, not a captive portal. Body is read up to 4 KiB and compared after trimming whitespace.
+Redirects are **not** followed; a redirect (3xx) or a status/body mismatch from at least one check means captive portal. A network error or timeout is a plain probe failure, not a captive portal. HTTP-01 resolves its hostname itself through the system resolver; a failed lookup is a plain failure with error class `dns`, never captive. Body is read up to 4 KiB and compared after trimming whitespace.
 
 ### 4.4 Rates and timeouts
 
@@ -216,9 +216,9 @@ Layers, each requiring the one below:
 |---|---|---|
 | L1 Link | primary adapter (§5 LINK-01) is up | everything |
 | L2 Address | primary adapter has a non-APIPA IPv4 | everything below |
-| L3 Gateway | gateway ping OK **or** gateway ARP resolved (Reachable/Permanent) **or** any L4-defining probe (NET-01/NET-04/RT-01) succeeded in the latest round; with an on-link route: open whenever L2 is open | LAN-01/02 (always run at L2), `lan` custom targets, DNS-01 if resolver is on-link, TRC-01, MTU-01 to gateway |
+| L3 Gateway | gateway ping OK **or** gateway ARP resolved (Reachable/Permanent) **or** any L4-defining probe (NET-01/NET-04/RT-01) succeeded in the latest round; with an on-link route: open whenever L2 is open | LAN-01/02 (always run at L2), `lan` custom targets, DNS-01 if resolver is on-link, HTTP-01, TRC-01, MTU-01 to gateway |
 | L4 Internet | **any** of: NET-01 ok, NET-04 ok, RT-01 ok | NET-*, DNS-02, RT-01, NAT-01, `internet` custom targets, MTU-01 to trace target, DNS-01 if resolver is remote |
-| L5 DNS | DNS-01 ok | HTTP-01, SVC-01, hostname targets, TEAMS-*/MEET-*/MEDIA-01 when target is a hostname |
+| L5 DNS | DNS-01 ok | SVC-01, hostname targets, TEAMS-*/MEET-*/MEDIA-01 when target is a hostname |
 
 Rules:
 - The probes that **define** a layer keep running while that layer is closed, so recovery is detected. Only the layers above pause.
@@ -233,6 +233,8 @@ Rules:
 - Paused probes record **skipped** samples with the reason (`"skipped: gateway down"`). Skipped never counts as loss; graphs show gaps.
 - **L1/L2 outcomes:** no primary adapter, or the primary is down (with no route this means no hardware ethernet/Wi-Fi adapter is up; up virtual adapters do not count) → L1 closed → `NO_LINK`. Primary up with only 169.254.x.x addresses → `APIPA`. Primary up without any IPv4 → `NO_ADDRESS`.
 - **L3 evidence:** traffic that reaches the internet passes the gateway, so a successful L4-defining probe proves the gateway alive even when it ignores ping and its ARP entry is only stale. A stale/unconfirmed ARP entry alone never keeps L3 open.
+- **L3 recovery through the internet:** when L3 is not open (closed, or unknown at start-up / after an adapter reset) and the route goes through a gateway (L1/L2 open), NET-04 keeps running instead of skipping or waiting. Without it, a gateway that ignores ping and whose ARP entry is only stale could never reopen L3 after an outage (every L4 probe skipped → no L3 evidence → `GW_UNREACHABLE` forever), and at start-up would close L3 after `gate.fail_count` rounds. A NET-04 sample taken in this state is a *recovery* sample (`Sample.Recovery`): its success is L3 evidence (above) and reopens L3 by the normal hysteresis; its failure, like any L4 evidence, never fails L3. Recovery samples are **not** L4 evidence and are left out of loss/RTT/jitter statistics, verdict "consecutive failure" checks and settled loss (treated like skipped samples). Once L3 is open NET-04 is an ordinary L4 probe again. The start-up / reset case extends the original rule ("while L3 is closed"): otherwise such a gateway would show a false `GW_UNREACHABLE` for a few seconds at every start, and headless runs would exit 13.
+- **HTTP-01 needs L3 only:** a captive portal typically blocks everything except DNS and HTTP to the portal, so L4 (and often L5) closes; HTTP-01 must still run to recognise the portal.
 - **On-link route** (default route without a next hop): L3 counts as open when L2 is open; LAN-01 and LAN-02 record skipped samples with reason `no gateway (on-link route)`.
 - Gateway ping failing (last `gate.fail_count` results) while ARP is Reachable/Permanent **or** internet traffic works right now (§8) → info flag `GW_ICMP_BLOCKED`, gate stays open.
 - Adapter change (Wi-Fi roam, cable, new IP, change of best-route adapter): re-evaluate from L1 upward, start new series for affected targets.
@@ -257,7 +259,7 @@ Root cause = lowest closed gate. Quality verdicts are evaluated only when all lo
 | `APIPA` | L2 closed due to 169.254.x.x | 11 |
 | `NO_ADDRESS` | L2 closed, no IPv4 at all | 12 |
 | `GW_UNREACHABLE` | L3 closed | 13 |
-| `CAPTIVE_PORTAL` | L4 open, HTTP-01 redirect/mismatch | 14 |
+| `CAPTIVE_PORTAL` | L1–L3 open, HTTP-01 redirect/mismatch (any L4/L5 state) | 14 |
 | `ISP_DOWN` | L4 closed | 15 |
 | `DNS_LOCAL_FAIL` | L5 closed, DNS-02 ok | 16 |
 | `DNS_FAIL` | L5 closed, DNS-02 fails | 17 |
@@ -266,7 +268,7 @@ Root cause = lowest closed gate. Quality verdicts are evaluated only when all lo
 | `TEAMS_PARTIAL_PORTS` | some (not all) ports in `teams.udp_ports` fail (report which; labels: 3478 general, 3479 audio, 3480 video, 3481 sharing) | 20 |
 | `MEET_UDP_BLOCKED` | MEET-01 fails, while SVC-01 TLS to `meet.google.com` or NET-04 is ok | 21 |
 | `MTU_ISSUE` | path MTU < `thresholds.mtu_min` (default 1400) | 22 |
-| `LAN_LOSS` | LAN-01 loss > `thresholds.loss_pct` (default 2) | 23 |
+| `LAN_LOSS` | LAN-01 loss > `thresholds.loss_pct` (default 2) **and** every NET-01 target shows loss too (see below) | 23 |
 | `ISP_LOSS` | LAN-01 loss ≤ threshold, loss on **every** NET-01 target > threshold | 24 |
 | `QUALITY_POOR_VOIP` | on the call-quality source (§5 MEDIA-01 note): MOS < `thresholds.mos_min` (default 3.6) or jitter > `thresholds.jitter_ms` (default 30) or avg RTT > `thresholds.rtt_ms` (default 150) | 25 |
 
@@ -276,12 +278,13 @@ Priority when several apply: table order top to bottom.
 - Exclusions: `LAN_LOSS` is not raised while `GW_ICMP_BLOCKED` (a gateway that ignores ping is not lossy); `ISP_LOSS` is not raised while `ICMP_BLOCKED`.
 - **Settled loss:** `LAN_LOSS` and `ISP_LOSS` use the window loss **without the newest run of consecutive failures** (an ongoing run is either the start of an outage, which the gates decide within `gate.fail_count` rounds, or becomes loss as soon as a success follows). Without this, the first lost ping of a gateway outage would read as `LAN_LOSS` for the seconds before `GW_UNREACHABLE` (seen in the `gw_down` simulation). The loss % shown in tables is the plain window loss.
 - `GW_ICMP_BLOCKED` needs the gateway's ARP entry Reachable/Permanent, or internet traffic working *now* (L4 open and the newest result of a NET-01, NET-04 or RT-01 series ok) — not merely an L4 gate still open during its hysteresis.
-- `CAPTIVE_PORTAL`: the newest result of any HTTP-01 check is a redirect/mismatch. `MTU_ISSUE` uses the newest MTU-01 result of either target. `SYMMETRIC_NAT`: the newest NAT-01 result says symmetric. `SERVICE_UNREACHABLE:<host>` and `TEAMS_SRC_PORTS_BLOCKED`: the newest result of that series failed (`TEAMS_SRC_PORTS_BLOCKED` is not raised while `TEAMS_RELAY_UNREACHABLE`).
+- `CAPTIVE_PORTAL`: the newest result of any HTTP-01 check is a redirect/mismatch. It wins over `ISP_DOWN`, `DNS_LOCAL_FAIL` and `DNS_FAIL` whatever the L4/L5 state (closed, open or unknown): a portal blocks the internet and often DNS, and those verdicts would hide the real cause. L1–L3 must be open (`GW_UNREACHABLE` and lower still win; an L3 still unknown gives `CHECKING`). An HTTP-01 DNS failure (class `dns`) is not captive.
+- **Gateway ICMP rate limiting:** home routers often drop pings to themselves under load while forwarding traffic fine (the same effect as mtr intermediate-hop loss). `LAN_LOSS` is therefore raised only when LAN-01 settled loss > threshold **and** every NET-01 target has at least `window.min_samples` settled samples with settled loss ≥ half the LAN-01 settled loss **or** > threshold. If LAN-01 is lossy but some NET-01 target is clean by that rule, the info flag `GW_ICMP_RATE_LIMITED` is raised instead (no primary verdict from it). While a NET-01 target lacks `window.min_samples` settled samples, neither is raised. Neither is raised while `GW_ICMP_BLOCKED`. `MTU_ISSUE` uses the newest MTU-01 result of either target. `SYMMETRIC_NAT`: the newest NAT-01 result says symmetric. `SERVICE_UNREACHABLE:<host>` and `TEAMS_SRC_PORTS_BLOCKED`: the newest result of that series failed (`TEAMS_SRC_PORTS_BLOCKED` is not raised while `TEAMS_RELAY_UNREACHABLE`).
 - Call-quality source: the first of MEDIA-01 Teams, MEDIA-01 Meet, NET-01 to the first `targets.internet_icmp` entry that has `window.min_samples` results; MEDIA-01 Teams is passed over while `TEAMS_RELAY_UNREACHABLE`.
 - While any of L1–L4 is still `unknown`, the primary verdict is `CHECKING` (shown in console/web, never an exit code by itself).
 - **Call quality status** (console + web): `Measuring…` before `window.min_samples`; `Good` when MOS ≥ `thresholds.mos_good` and no quality threshold is exceeded; `Poor` when `QUALITY_POOR_VOIP` conditions hold; otherwise `Fair`.
 
-Info flags (no exit code): `GW_ICMP_BLOCKED`, `ICMP_BLOCKED` (NET-01 fails, NET-04 ok), `SYMMETRIC_NAT`, `WIFI_WEAK` (signal < `thresholds.wifi_signal_pct`, default 50), `WIFI_24GHZ` (connected on the 2.4 GHz band), `CPU_HIGH` (10 s average CPU ≥ `thresholds.cpu_high_pct`; shown alongside network verdicts because a busy CPU also degrades calls), `TEAMS_SRC_PORTS_BLOCKED`, `TEAMS_DISABLED` (`teams.relays` empty), `TEAMS_RELAY_UNREACHABLE` (see 8.2), `SERVICE_UNREACHABLE:<host>` (SVC-01 DNS or TLS fails for that service while L5 is open), `CUSTOM_TARGET_DOWN:<name>`, `CSV_WRITE_ERROR`.
+Info flags (no exit code): `GW_ICMP_BLOCKED`, `GW_ICMP_RATE_LIMITED` (LAN-01 loss while the internet targets are clean, see above), `ICMP_BLOCKED` (NET-01 fails, NET-04 ok), `SYMMETRIC_NAT`, `WIFI_WEAK` (signal < `thresholds.wifi_signal_pct`, default 50), `WIFI_24GHZ` (connected on the 2.4 GHz band), `CPU_HIGH` (10 s average CPU ≥ `thresholds.cpu_high_pct`; shown alongside network verdicts because a busy CPU also degrades calls), `TEAMS_SRC_PORTS_BLOCKED`, `TEAMS_DISABLED` (`teams.relays` empty), `TEAMS_RELAY_UNREACHABLE` (see 8.2), `SERVICE_UNREACHABLE:<host>` (SVC-01 DNS or TLS fails for that service while L5 is open), `CUSTOM_TARGET_DOWN:<name>`, `CSV_WRITE_ERROR`.
 
 Exit codes 1 = runtime error, 2 = config error.
 

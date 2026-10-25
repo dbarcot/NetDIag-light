@@ -76,6 +76,7 @@ func (v Verdict) Rank() int {
 // Info flags (SPEC §8), in display order.
 const (
 	FlagGWICMPBlocked         = "GW_ICMP_BLOCKED"
+	FlagGWICMPRateLimited     = "GW_ICMP_RATE_LIMITED"
 	FlagICMPBlocked           = "ICMP_BLOCKED"
 	FlagSymmetricNAT          = "SYMMETRIC_NAT"
 	FlagWiFiWeak              = "WIFI_WEAK"
@@ -119,10 +120,13 @@ func (s SeriesData) SettledLoss() (lossPct float64, sent int) {
 }
 
 // TrailingFails counts the newest consecutive failures, ignoring skipped
-// samples (window ordered oldest first).
+// and recovery samples (window ordered oldest first).
 func TrailingFails(window []probe.Sample) int {
 	n := 0
 	for i := len(window) - 1; i >= 0; i-- {
+		if window[i].Recovery {
+			continue
+		}
 		switch window[i].Result {
 		case probe.Fail:
 			n++
@@ -280,9 +284,10 @@ func Evaluate(in Input) Result {
 
 	r := Result{}
 	r.Quality = e.quality(relayUnreachable)
-	r.Verdict, r.Detail = e.primary(failing, lastOK, net04OK, gwICMPBlocked, icmpBlocked, relayUnreachable, r.Quality)
+	lanLoss := e.lanLoss(gwICMPBlocked)
+	r.Verdict, r.Detail = e.primary(failing, lastOK, net04OK, icmpBlocked, relayUnreachable, lanLoss, r.Quality)
 	r.ExitCode = r.Verdict.ExitCode()
-	r.Flags = e.flags(failing, gwICMPBlocked, icmpBlocked, relayUnreachable)
+	r.Flags = e.flags(failing, gwICMPBlocked, lanLoss == lanLossRateLimited, icmpBlocked, relayUnreachable)
 	return r
 }
 
@@ -301,10 +306,65 @@ func (e *eval) relayUnreachable(failing, lastOK func(SeriesData) bool) bool {
 	return dnsFail || (all(e.probe("TEAMS-01"), failing) && all(e.probe("TEAMS-02"), failing))
 }
 
-func (e *eval) primary(failing, lastOK func(SeriesData) bool, net04OK, gwICMPBlocked, icmpBlocked, relayUnreachable bool, q CallQuality) (Verdict, string) {
+// lossy: enough settled samples and settled loss above the threshold.
+func (e *eval) lossy(s SeriesData) bool {
+	loss, sent := s.SettledLoss()
+	return sent >= e.in.MinSamples && loss > e.in.Thresholds.LossPct
+}
+
+// lanLossKind classifies LAN-01 loss (SPEC §8).
+type lanLossKind int
+
+const (
+	lanLossNone        lanLossKind = iota
+	lanLossReal                    // LAN_LOSS
+	lanLossRateLimited             // GW_ICMP_RATE_LIMITED
+)
+
+// lanLoss decides whether lossy gateway pings are real LAN loss. Home
+// routers often drop pings to themselves under load while forwarding fine
+// (like mtr intermediate-hop loss), so the loss counts only when every
+// NET-01 target also shows it: settled loss ≥ half the LAN-01 loss, or
+// above the threshold. A NET-01 target without enough settled samples
+// leaves the question open (neither verdict nor flag).
+func (e *eval) lanLoss(gwICMPBlocked bool) lanLossKind {
+	if gwICMPBlocked {
+		return lanLossNone // a gateway that ignores ping is not lossy
+	}
+	lanPct := -1.0
+	for _, s := range e.probe("LAN-01") {
+		if e.lossy(s) {
+			loss, _ := s.SettledLoss()
+			lanPct = max(lanPct, loss)
+		}
+	}
+	net := e.probe("NET-01")
+	if lanPct < 0 || len(net) == 0 {
+		return lanLossNone
+	}
+	for _, s := range net {
+		if _, sent := s.SettledLoss(); sent < e.in.MinSamples {
+			return lanLossNone
+		}
+	}
+	if all(net, func(s SeriesData) bool {
+		loss, _ := s.SettledLoss()
+		return loss >= lanPct/2 || loss > e.in.Thresholds.LossPct
+	}) {
+		return lanLossReal
+	}
+	return lanLossRateLimited
+}
+
+func (e *eval) primary(failing, lastOK func(SeriesData) bool, net04OK, icmpBlocked, relayUnreachable bool, lanLoss lanLossKind, q CallQuality) (Verdict, string) {
 	g := e.in.Gates
 	// Root cause = lowest closed gate; CHECKING while L1–L4 are undecided.
+	// A captive portal blocks the internet and often DNS, so once L1–L3
+	// are open it wins over ISP_DOWN and the DNS verdicts (SPEC §8).
 	for _, l := range gate.Layers {
+		if l == gate.L4 && e.captive() {
+			return CaptivePortal, ""
+		}
 		switch g[l].State {
 		case gate.Closed:
 			switch l {
@@ -332,12 +392,6 @@ func (e *eval) primary(failing, lastOK func(SeriesData) bool, net04OK, gwICMPBlo
 		}
 	}
 
-	if anyOf(e.probe("HTTP-01"), func(s SeriesData) bool {
-		l, ok := s.Last()
-		return ok && l.ErrClass == probe.ClassCaptive
-	}) {
-		return CaptivePortal, ""
-	}
 	if all(e.probe("RT-01"), failing) && net04OK {
 		return UDPBlocked, ""
 	}
@@ -372,12 +426,9 @@ func (e *eval) primary(failing, lastOK func(SeriesData) bool, net04OK, gwICMPBlo
 			return MTUIssue, fmt.Sprintf("path MTU %d to %s", int(l.Value), s.Target)
 		}
 	}
-	lossy := func(s SeriesData) bool {
-		loss, sent := s.SettledLoss()
-		return sent >= e.in.MinSamples && loss > th.LossPct
-	}
+	lossy := e.lossy
 	lan := e.probe("LAN-01")
-	if !gwICMPBlocked && anyOf(lan, lossy) {
+	if lanLoss == lanLossReal {
 		return LANLoss, ""
 	}
 	lanClean := all(lan, func(s SeriesData) bool {
@@ -391,6 +442,15 @@ func (e *eval) primary(failing, lastOK func(SeriesData) bool, net04OK, gwICMPBlo
 		return QualityPoorVoIP, q.Source
 	}
 	return OK, ""
+}
+
+// captive reports whether the newest result of any HTTP-01 check is a
+// redirect or a status/body mismatch.
+func (e *eval) captive() bool {
+	return anyOf(e.probe("HTTP-01"), func(s SeriesData) bool {
+		l, ok := s.Last()
+		return ok && l.ErrClass == probe.ClassCaptive
+	})
 }
 
 // quality picks the call-quality source (SPEC §5 MEDIA-01 note) and rates
@@ -433,7 +493,7 @@ func (e *eval) quality(relayUnreachable bool) CallQuality {
 	return q
 }
 
-func (e *eval) flags(failing func(SeriesData) bool, gwICMPBlocked, icmpBlocked, relayUnreachable bool) []string {
+func (e *eval) flags(failing func(SeriesData) bool, gwICMPBlocked, gwRateLimited, icmpBlocked, relayUnreachable bool) []string {
 	var f []string
 	add := func(cond bool, flag string) {
 		if cond {
@@ -442,6 +502,7 @@ func (e *eval) flags(failing func(SeriesData) bool, gwICMPBlocked, icmpBlocked, 
 	}
 	th := e.in.Thresholds
 	add(gwICMPBlocked, FlagGWICMPBlocked)
+	add(gwRateLimited, FlagGWICMPRateLimited)
 	add(icmpBlocked, FlagICMPBlocked)
 	add(anyOf(e.probe("NAT-01"), func(s SeriesData) bool {
 		l, ok := s.Last()

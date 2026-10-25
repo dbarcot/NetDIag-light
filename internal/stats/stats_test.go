@@ -205,3 +205,22 @@ func TestSummarize_Empty(t *testing.T) {
 		t.Errorf("got %+v", s)
 	}
 }
+
+// Recovery samples (NET-04 while L3 is not open) are left out like
+// skipped ones: no loss, no RTT, no jitter pair.
+func TestSummarize_RecoveryIsNotCounted(t *testing.T) {
+	t.Parallel()
+	ms := func(r probe.Result, rtt float64, rec bool) probe.Sample {
+		return probe.Sample{Result: r, RTT: time.Duration(rtt * float64(time.Millisecond)), Recovery: rec}
+	}
+	s := Summarize([]probe.Sample{
+		ms(probe.OK, 10, false), ms(probe.Fail, 0, true), ms(probe.OK, 500, true), ms(probe.OK, 12, false),
+		ms(probe.OK, 14, false), ms(probe.OK, 16, false),
+	})
+	if s.Sent != 4 || s.Failed != 0 || s.Skipped != 2 || s.Worst != 16 || s.LossPct != 0 {
+		t.Errorf("got %+v", s)
+	}
+	if !s.HasJitter || s.Jitter != 2 { // pairs 12-14, 14-16; 10 and 12 are separated by recovery samples
+		t.Errorf("jitter %v %v, want 2", s.Jitter, s.HasJitter)
+	}
+}

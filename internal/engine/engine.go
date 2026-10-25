@@ -154,10 +154,14 @@ func (e *Engine) Decision(id string) sched.Decision {
 	return e.gates.Decision(id)
 }
 
-// OnSample records a sample (the scheduler sink).
+// OnSample records a sample (the scheduler sink). A sample of an L3
+// recovery series that arrives while L3 is not open is marked Recovery.
 func (e *Engine) OnSample(s probe.Sample) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if s.Result != probe.Skipped && e.gates.Recovering(s.Series) {
+		s.Recovery = true
+	}
 	e.store.Add(s)
 	e.gates.Observe(s)
 }
@@ -238,11 +242,12 @@ func (e *Engine) Snapshot() Snapshot {
 	return snap
 }
 
-// recent returns the newest n non-skipped samples, oldest first.
+// recent returns the newest n non-skipped, non-recovery samples, oldest
+// first.
 func recent(history []probe.Sample, n int) []probe.Sample {
 	var out []probe.Sample
 	for i := len(history) - 1; i >= 0 && len(out) < n; i-- {
-		if history[i].Result != probe.Skipped {
+		if history[i].Result != probe.Skipped && !history[i].Recovery {
 			out = append(out, history[i])
 		}
 	}
