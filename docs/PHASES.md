@@ -91,14 +91,16 @@ Rules (from `CLAUDE.md`): finish phases in order; tests are written during the p
 **Build**
 - TCP connect; DNS-01 (`DnsQuery_W`, bypass cache); DNS-02 (miekg/dns UDP 53); STUN (pion/stun) incl. public IP and same-socket NAT-01; HTTP-01 (no redirect follow, body/status check); SVC-01 (resolve + TLS handshake timing); MTU-01 (DF binary search; buffer-size rule and status handling per SPEC §5 note); TRC-01 (TTL cycling every `trace.interval_ms`, per-hop series, multiple IPs per hop, async cached reverse DNS); custom ICMP/TCP targets with hostname re-resolution.
 - Wire all probes into scheduler + gates.
+- Rules recorded before the phase (SPEC §4.3, §5, §8): HTTP-01/SVC-01 use their own `http.Transport` (`Proxy: nil`, `DisableKeepAlives: true`, no redirects via `http.ErrUseLastResponse`, probe timeout), never `http.DefaultTransport`; DNS-01 queries each adapter DNS server separately with `DNS_QUERY_BYPASS_CACHE` and the server in `pExtra`/`DnsQueryEx`, never `net.Resolver`; `CAPTIVE_PORTAL` needs no passing HTTP-01 check, else flag `HTTP_CHECK_FILTERED:<host>` (verdict change + scenario `http_check_filtered`).
 
 **Tests**
-- Unit with local fakes, no internet: TCP probe against an `httptest`/`net.Listen` on loopback (ok) and a closed port (fail); HTTP-01 against `httptest` servers returning the right body, wrong body, 302 → captive classification; STUN against a minimal in-test UDP STUN responder (pion/stun can build responses) incl. mapped-address parsing and NAT-01 comparison; DNS-02 against an in-test miekg/dns server (ok, SERVFAIL, timeout); MTU binary search against a fake ICMP function with a fixed max size; trace hop assembly from fake TTL responses incl. ECMP and non-final-hop loss.
+- Unit with local fakes, no internet: TCP probe against an `httptest`/`net.Listen` on loopback (ok) and a closed port (fail); HTTP-01 against `httptest` servers returning the right body, wrong body, 302 → captive classification (the redirect is not followed); HTTP-01 and SVC-01 ignore `HTTP_PROXY`/`HTTPS_PROXY` (set them to an in-test proxy listener that must see no connection) and open a new connection every run (server counts connections); DNS-01 server selection: the query goes to the given server (in-test UDP DNS server on loopback answering, a second unreachable server failing in its own series); STUN against a minimal in-test UDP STUN responder (pion/stun can build responses) incl. mapped-address parsing and NAT-01 comparison; DNS-02 against an in-test miekg/dns server (ok, SERVFAIL, timeout); MTU binary search against a fake ICMP function with a fixed max size; trace hop assembly from fake TTL responses incl. ECMP and non-final-hop loss.
 - Integration: each real probe once against its default public target; DNS-01 against the system resolver; MTU to gateway returns 1500 or a plausible value; trace to `1.1.1.1` ends at the target.
 
 **Acceptance**
 - [ ] Every probe ID from SPEC §5 except TEAMS/MEET/MEDIA/SRC exists with unit tests
 - [ ] Integration suite passes on a normal home/office connection
+- [ ] Scenario `http_check_filtered` (one HTTP-01 check captive, the other ok → `OK` + `HTTP_CHECK_FILTERED:<host>`, no `CAPTIVE_PORTAL`) passes and is in the required list of TESTING.md
 
 ---
 
