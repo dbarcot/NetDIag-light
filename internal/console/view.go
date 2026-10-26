@@ -89,6 +89,7 @@ type View struct {
 	RTTThreshold float64 // thresholds.rtt_ms (sparkline colour)
 	Sparkline    bool    // console.sparkline
 	Keys         bool    // key handling is active (footer hint)
+	Stopping     bool    // a stop was requested (footer "Stopping…")
 }
 
 // BuildView derives a frame from a snapshot and the samples in st.
@@ -138,7 +139,34 @@ func BuildView(snap engine.Snapshot, st *store.Store, cfg *config.Config, meta M
 		v.Rows = append(v.Rows, buildRow(sp, history(sp.ID), st.Stats(sp.ID), snap.Time))
 	}
 	v.Hops = buildHops(snap.Hops, st)
+	sanitize(&v)
 	return v
+}
+
+// sanitize passes every string of the view that is not one of our own
+// constants through clean: SSIDs, reverse DNS names, adapter names, config
+// values and probe error details may hold control or bidi characters.
+func sanitize(v *View) {
+	for _, p := range []*string{
+		&v.Version, &v.ConfigSource, &v.WebURL,
+		&v.Adapter, &v.LocalIP, &v.Gateway, &v.GatewayMAC, &v.DNS, &v.PublicIP, &v.WiFi, &v.CPU,
+		&v.QualityLabel, &v.Teams, &v.TraceTarget, &v.Result.Detail,
+	} {
+		*p = clean(*p)
+	}
+	v.Result.Verdict = verdict.Verdict(clean(string(v.Result.Verdict)))
+	flags := make([]string, len(v.Result.Flags))
+	for i, f := range v.Result.Flags {
+		flags[i] = clean(f)
+	}
+	v.Result.Flags = flags
+	for i := range v.Rows {
+		r := &v.Rows[i]
+		r.Name, r.Host, r.Reason = clean(r.Name), clean(r.Host), clean(r.Reason)
+	}
+	for i := range v.Hops {
+		v.Hops[i].Hosts = clean(v.Hops[i].Hosts)
+	}
 }
 
 func buildRow(sp engine.Spec, h []probe.Sample, s stats.Summary, now time.Time) Row {
@@ -237,7 +265,12 @@ func gatewayMAC(snap engine.Snapshot, st *store.Store) string {
 	return ""
 }
 
-// publicIP is the mapped address of the newest STUN answer (RT-01, NAT-01).
+// publicIPMaxAge is how long a STUN answer stays good for the header: an
+// older one may describe a network this machine has left.
+const publicIPMaxAge = 120 * time.Second
+
+// publicIP is the mapped address of the newest STUN answer (RT-01, NAT-01),
+// "-" when there is none or it is older than publicIPMaxAge.
 func publicIP(snap engine.Snapshot, st *store.Store) string {
 	var best probe.Sample
 	for _, sp := range snap.Specs {
@@ -254,7 +287,7 @@ func publicIP(snap engine.Snapshot, st *store.Store) string {
 			}
 		}
 	}
-	if !best.Mapped.IsValid() {
+	if !best.Mapped.IsValid() || snap.Time.Sub(best.Time) > publicIPMaxAge {
 		return "-"
 	}
 	return best.Mapped.Addr().String()

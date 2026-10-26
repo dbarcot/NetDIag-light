@@ -41,6 +41,7 @@ func main() {
 		version:   version,
 		commit:    commit,
 		live:      realLive,
+		openLog:   openLogFile,
 	}
 	code := a.main(os.Args[1:])
 	stop()

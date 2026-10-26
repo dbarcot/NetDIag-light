@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"runtime"
 	"strings"
 	"time"
@@ -41,8 +42,12 @@ type app struct {
 	version        string
 	commit         string
 	// live runs the real probes on eng until ctx ends (real: realLive;
-	// tests swap in a stub). The console renders eng meanwhile.
-	live func(ctx context.Context, cfg *config.Config, eng *engine.Engine, logPath string) error
+	// tests swap in a stub). The console renders eng meanwhile. logger is
+	// the --log file, nil without one.
+	live func(ctx context.Context, cfg *config.Config, eng *engine.Engine, logger *slog.Logger) error
+	// openLog opens the --log file ("" = no log: nil logger); close is
+	// called when the run ends (real: openLogFile).
+	openLog func(path string) (logger *slog.Logger, close func(), err error)
 }
 
 // main runs one command and returns the process exit code. After help or
@@ -190,7 +195,7 @@ func (a *app) runSim(path string) (int, bool) {
 	}
 	fmt.Fprintf(a.stdout, "netdiag %s\nsimulation %q (%d s): %s\n", a.version, sc.Name, sc.DurationS, sc.Description)
 	eng := engine.New(sc.Config(), a.clock)
-	err = a.showConsole(sc.Config(), "simulation "+sc.Name, eng, func(ctx context.Context) error {
+	err = a.showConsole(sc.Config(), "simulation "+sc.Name, eng, nil, func(ctx context.Context) error {
 		_, err := sim.LiveOn(ctx, sc, eng, a.clock, nil)
 		return err
 	})
@@ -203,7 +208,7 @@ func (a *app) runSim(path string) (int, bool) {
 
 // showConsole runs work under the console view (SPEC §9) until it ends,
 // Ctrl+C or q.
-func (a *app) showConsole(cfg *config.Config, source string, eng *engine.Engine, work func(ctx context.Context) error) error {
+func (a *app) showConsole(cfg *config.Config, source string, eng *engine.Engine, logger *slog.Logger, work func(ctx context.Context) error) error {
 	lookup := a.lookupEnv
 	if lookup == nil {
 		lookup = func(string) (string, bool) { return "", false }
@@ -211,7 +216,8 @@ func (a *app) showConsole(cfg *config.Config, source string, eng *engine.Engine,
 	return console.Run(a.ctx, console.Options{
 		Console: a.console, Stdout: a.stdout, Clock: a.clock, LookupEnv: lookup, Config: cfg,
 		// the web UI comes with Phase 6; until then the header says "off"
-		Meta: console.Meta{Version: a.version, ConfigSource: source},
+		Meta:   console.Meta{Version: a.version, ConfigSource: source},
+		Logger: logger,
 	}, eng, work)
 }
 
@@ -249,10 +255,16 @@ func (a *app) run(args []string) (int, bool) {
 		fmt.Fprintln(a.stdout, "Config OK. Headless mode is not implemented in this build yet.")
 		return exitOK, false
 	}
+	logger, closeLog, err := a.openLog(o.logPath)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "netdiag: --log: %v\n", err)
+		return exitRuntime, false
+	}
+	defer closeLog()
 	fmt.Fprintln(a.stdout, "Press Ctrl+C to stop.")
 	eng := engine.New(cfg, a.clock)
-	err = a.showConsole(cfg, source, eng, func(ctx context.Context) error {
-		return a.live(ctx, cfg, eng, o.logPath)
+	err = a.showConsole(cfg, source, eng, logger, func(ctx context.Context) error {
+		return a.live(ctx, cfg, eng, logger)
 	})
 	if err != nil {
 		fmt.Fprintf(a.stderr, "netdiag: %v\n", err)

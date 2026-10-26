@@ -381,3 +381,25 @@ func TestEngine_ResetClearsCountersKeepsGates(t *testing.T) {
 		t.Errorf("gates changed by reset: %v -> %v", before.Gates, after.Gates)
 	}
 }
+
+// Adapter events are numbered from 1 for consumers that must not print an
+// event twice when old ones are dropped (Phase 9 cap).
+func TestEngine_AdapterEventSeq(t *testing.T) {
+	t.Parallel()
+	e, _ := newEngine(t)
+	wifi := system(wifiAdapter("192.168.1.23/24", "192.168.1.1"), "192.168.1.1")
+	eth := system(sysapi.Adapter{Index: 3, Name: "Ethernet", Type: sysapi.AdapterEthernet, Hardware: true, Up: true,
+		IPv4: []netip.Prefix{netip.MustParsePrefix("10.0.0.5/24")}}, "10.0.0.1")
+	for _, s := range []System{wifi, eth, wifi, eth} {
+		e.SetSystem(s)
+	}
+	snap := e.Snapshot()
+	if len(snap.AdapterEvents) != 3 || snap.AdapterEventsDropped != 0 {
+		t.Fatalf("events %d, dropped %d", len(snap.AdapterEvents), snap.AdapterEventsDropped)
+	}
+	for i, ev := range snap.AdapterEvents {
+		if ev.Seq != i+1 {
+			t.Errorf("event %d has Seq %d, want %d", i, ev.Seq, i+1)
+		}
+	}
+}

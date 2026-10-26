@@ -5,9 +5,11 @@ package sysapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"unicode/utf16"
@@ -25,8 +27,24 @@ type freshConsoleResult struct {
 	RestIn, RestOut uint32
 	VT, Keys        bool
 	Written         string // read back from the screen buffer after Write
+	BigFrameLast    string // last row of a ~40 kB frame, read back
 	Err             string
 }
+
+// bigFrame is a ~40 kB frame of coloured rows (several WriteConsoleW
+// chunks); its last row reads back as bigFrameLastRow.
+func bigFrame() string {
+	var b strings.Builder
+	for i := range 500 {
+		if i > 0 {
+			b.WriteString("\r\n")
+		}
+		fmt.Fprintf(&b, "\x1b[1;32mrow %03d\x1b[0m %s\x1b[K", i, strings.Repeat("▁▂▃▄", 15))
+	}
+	return b.String()
+}
+
+var bigFrameLastRow = "row 499 " + strings.Repeat("▁▂▃▄", 15)
 
 // consoleWriteProbe has characters outside every OEM code page.
 const consoleWriteProbe = "spark ▁▄█ × …"
@@ -74,6 +92,9 @@ func TestWinConsole_FreshConsole(t *testing.T) {
 	if r.RestIn != r.OrigIn || r.RestOut != r.OrigOut {
 		t.Errorf("not restored: in %#x→%#x, out %#x→%#x", r.OrigIn, r.RestIn, r.OrigOut, r.RestOut)
 	}
+	if r.BigFrameLast != bigFrameLastRow {
+		t.Errorf("last row of a big frame %q, want %q (chunked writes)", r.BigFrameLast, bigFrameLastRow)
+	}
 	if r.Written != consoleWriteProbe {
 		t.Errorf("Write put %q on the screen, want %q (WriteConsoleW, SPEC §9 encoding)", r.Written, consoleWriteProbe)
 	}
@@ -98,12 +119,35 @@ func writeFreshConsoleResult(path string) {
 	r.VT, r.Keys = s.VT, s.Keys
 	r.RawIn, _ = c.InMode()
 	r.RawOut, _ = c.OutMode()
+	r.BigFrameLast = writeBigFrame(c)
 	if err := s.Restore(); err != nil {
 		r.Err = err.Error()
 	}
 	r.RestIn, _ = c.InMode()
 	r.RestOut, _ = c.OutMode()
 	r.Written = writeAndReadBack(c, consoleWriteProbe)
+}
+
+// writeBigFrame writes bigFrame (VT on) and reads back the row the
+// cursor ends on.
+func writeBigFrame(c *WinConsole) string {
+	if _, err := c.Write([]byte("\r\n" + bigFrame())); err != nil {
+		return "write: " + err.Error()
+	}
+	var info windows.ConsoleScreenBufferInfo
+	if err := windows.GetConsoleScreenBufferInfo(c.out, &info); err != nil {
+		return "info: " + err.Error()
+	}
+	n := len(utf16.Encode([]rune(bigFrameLastRow)))
+	buf := make([]uint16, n)
+	var read uint32
+	proc := windows.NewLazySystemDLL("kernel32.dll").NewProc("ReadConsoleOutputCharacterW")
+	pos := uintptr(uint32(uint16(info.CursorPosition.Y)) << 16)
+	if r, _, err := proc.Call(uintptr(c.out), uintptr(unsafe.Pointer(&buf[0])), uintptr(n), pos, uintptr(unsafe.Pointer(&read))); r == 0 {
+		return "read: " + err.Error()
+	}
+	_, _ = c.Write([]byte("\r\n"))
+	return string(utf16.Decode(buf[:read]))
 }
 
 // writeAndReadBack writes s at the cursor with Console.Write and reads the
@@ -158,4 +202,24 @@ func TestWinConsole_ModesAndWidth(t *testing.T) {
 	if h, err := c.Height(); err == nil && h <= 0 {
 		t.Errorf("height = %d", h)
 	}
+}
+
+// openConsoleDevices opens CONIN$/CONOUT$ directly, bypassing redirected
+// standard handles (used by tests that run in their own console).
+func openConsoleDevices() (*WinConsole, func(), error) {
+	open := func(name string) (windows.Handle, error) {
+		p, _ := windows.UTF16PtrFromString(name)
+		return windows.CreateFile(p, windows.GENERIC_READ|windows.GENERIC_WRITE,
+			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, 0)
+	}
+	in, err := open("CONIN$")
+	if err != nil {
+		return nil, nil, err
+	}
+	out, err := open("CONOUT$")
+	if err != nil {
+		_ = windows.CloseHandle(in)
+		return nil, nil, err
+	}
+	return &WinConsole{in: in, out: out}, func() { _ = windows.CloseHandle(in); _ = windows.CloseHandle(out) }, nil
 }

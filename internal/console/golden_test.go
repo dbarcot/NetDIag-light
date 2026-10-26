@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"netdiag/internal/engine"
 	"netdiag/internal/sim"
@@ -125,7 +124,7 @@ func TestGolden_LinesFitWidth(t *testing.T) {
 				if n := l.width(); n > w {
 					t.Errorf("%s at %d: line %d is %d wide: %q", g.name, w, i, n, l.String(false))
 				}
-				if n := utf8.RuneCountInString(l.String(false)); n != l.width() {
+				if n := stringWidth(l.String(false)); n != l.width() {
 					t.Errorf("width mismatch %d vs %d", n, l.width())
 				}
 			}

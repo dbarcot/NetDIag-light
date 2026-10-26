@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -110,7 +111,8 @@ func newTestApp(consoleCount int) *testApp {
 			paths:   config.Paths{ExeDir: `C:\tools`, AppData: `C:\Users\u\AppData\Roaming`},
 			version: "1.2.3",
 			commit:  "abc1234",
-			live:    func(context.Context, *config.Config, *engine.Engine, string) error { return nil },
+			live:    func(context.Context, *config.Config, *engine.Engine, *slog.Logger) error { return nil },
+			openLog: func(string) (*slog.Logger, func(), error) { return nil, func() {}, nil },
 		},
 		out: out, errOut: errOut, stdin: in, fs: fsys,
 	}
@@ -388,8 +390,13 @@ func TestRun_StartsLiveProbingWithTheLoadedConfig(t *testing.T) {
 	a := newTestApp(2)
 	var gotCfg *config.Config
 	var gotLog string
-	a.live = func(_ context.Context, cfg *config.Config, eng *engine.Engine, logPath string) error {
-		gotCfg, gotLog = cfg, logPath
+	a.openLog = func(path string) (*slog.Logger, func(), error) {
+		gotLog = path
+		return slog.New(slog.DiscardHandler), func() {}, nil
+	}
+	var gotLogger *slog.Logger
+	a.live = func(_ context.Context, cfg *config.Config, eng *engine.Engine, logger *slog.Logger) error {
+		gotCfg, gotLogger = cfg, logger
 		if eng == nil {
 			t.Error("no engine for the console")
 		}
@@ -398,7 +405,7 @@ func TestRun_StartsLiveProbingWithTheLoadedConfig(t *testing.T) {
 	if code := a.main([]string{"run", "--port", "9999", "--csv", `C:\logs`, "--log", `C:\l.txt`}); code != exitOK {
 		t.Fatalf("exit %d, stderr %q", code, a.errOut)
 	}
-	if gotCfg == nil || gotCfg.UI.Port != 9999 || gotCfg.CSV.Dir != `C:\logs` || gotLog != `C:\l.txt` {
+	if gotCfg == nil || gotCfg.UI.Port != 9999 || gotCfg.CSV.Dir != `C:\logs` || gotLog != `C:\l.txt` || gotLogger == nil {
 		t.Errorf("live got cfg %+v, log %q", gotCfg, gotLog)
 	}
 	if !strings.Contains(a.out.String(), "final: CHECKING") || strings.Contains(a.out.String(), "not implemented") {
@@ -409,7 +416,7 @@ func TestRun_StartsLiveProbingWithTheLoadedConfig(t *testing.T) {
 func TestRun_LiveErrorExitsOne(t *testing.T) {
 	t.Parallel()
 	a := newTestApp(2)
-	a.live = func(context.Context, *config.Config, *engine.Engine, string) error {
+	a.live = func(context.Context, *config.Config, *engine.Engine, *slog.Logger) error {
 		return errors.New("list adapters: boom")
 	}
 	if code := a.main([]string{"run"}); code != exitRuntime || !strings.Contains(a.errOut.String(), "list adapters: boom") {
@@ -420,7 +427,7 @@ func TestRun_LiveErrorExitsOne(t *testing.T) {
 func TestRun_HeadlessIsNotImplementedYet(t *testing.T) {
 	t.Parallel()
 	a := newTestApp(2)
-	a.live = func(context.Context, *config.Config, *engine.Engine, string) error {
+	a.live = func(context.Context, *config.Config, *engine.Engine, *slog.Logger) error {
 		t.Error("headless must not start live probing yet")
 		return nil
 	}
@@ -429,5 +436,14 @@ func TestRun_HeadlessIsNotImplementedYet(t *testing.T) {
 	}
 	if !strings.Contains(a.out.String(), "Headless mode is not implemented") {
 		t.Errorf("out = %q", a.out)
+	}
+}
+
+func TestRun_LogOpenErrorExitsOne(t *testing.T) {
+	t.Parallel()
+	a := newTestApp(2)
+	a.openLog = func(string) (*slog.Logger, func(), error) { return nil, nil, errors.New("access denied") }
+	if code := a.main([]string{"run", "--log", `C:\x.log`}); code != exitRuntime || !strings.Contains(a.errOut.String(), "--log: access denied") {
+		t.Errorf("exit %d, stderr %q", code, a.errOut)
 	}
 }

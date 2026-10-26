@@ -5,7 +5,6 @@ import (
 	"math"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"netdiag/internal/stats"
 	"netdiag/internal/verdict"
@@ -37,12 +36,13 @@ func plain(s string) line { return line{{text: s}} }
 func (l line) width() int {
 	n := 0
 	for _, s := range l {
-		n += utf8.RuneCountInString(s.text)
+		n += stringWidth(s.text)
 	}
 	return n
 }
 
-// fit cuts the line to w columns, ending a cut line with "…".
+// fit cuts the line to w columns, ending a cut line with "…". A wide rune
+// is never split: the column it would not fit in becomes a space.
 func (l line) fit(w int) line {
 	if l.width() <= w {
 		return l
@@ -53,13 +53,17 @@ func (l line) fit(w int) line {
 	var out line
 	left := w - 1
 	for _, s := range l {
-		r := []rune(s.text)
-		if len(r) >= left {
-			out = append(out, seg{string(r[:left]), s.sgr}, seg{"…", s.sgr})
+		sw := stringWidth(s.text)
+		if sw >= left {
+			prefix, pw := cutWidth(s.text, left)
+			out = append(out, seg{prefix, s.sgr}, seg{"…", s.sgr})
+			if pw < left {
+				out = append(out, seg{strings.Repeat(" ", left-pw), ""})
+			}
 			return out
 		}
 		out = append(out, s)
-		left -= len(r)
+		left -= sw
 	}
 	return out
 }
@@ -77,27 +81,28 @@ func (l line) String(color bool) string {
 	return b.String()
 }
 
-// trunc shortens s to n runes, ending with "…" when cut.
+// trunc shortens s to n columns, ending with "…" when cut (padded with a
+// space where a wide rune did not fit whole).
 func trunc(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
-	if utf8.RuneCountInString(s) <= n {
+	if stringWidth(s) <= n {
 		return s
 	}
-	r := []rune(s)
-	return string(r[:n-1]) + "…"
+	prefix, pw := cutWidth(s, n-1)
+	return prefix + "…" + strings.Repeat(" ", n-1-pw)
 }
 
 // padL left-aligns s in n columns (truncating), padR right-aligns.
 func padL(s string, n int) string {
 	s = trunc(s, n)
-	return s + strings.Repeat(" ", n-utf8.RuneCountInString(s))
+	return s + strings.Repeat(" ", n-stringWidth(s))
 }
 
 func padR(s string, n int) string {
 	s = trunc(s, n)
-	return strings.Repeat(" ", n-utf8.RuneCountInString(s)) + s
+	return strings.Repeat(" ", n-stringWidth(s)) + s
 }
 
 // ms formats a millisecond value: one decimal below 1 s.
@@ -180,7 +185,11 @@ func Render(v View, width int, loc *time.Location) []line {
 		add(line{{"Hops to " + v.TraceTarget, sgrBold}})
 		out = append(out, hopTable(v.Hops, width)...)
 	}
-	if v.Keys {
+	switch {
+	case v.Stopping:
+		add(nil)
+		add(line{{"Stopping…", sgrYellow}})
+	case v.Keys:
 		add(nil)
 		add(line{{"q quit  r reset counters", sgrGrey}})
 	}
@@ -258,10 +267,10 @@ func statsWidth(cols int) int {
 func columns(names, hosts []string, fixed, width int, wantSpark bool) (nameW, hostW int, sparkOn bool) {
 	nameW, hostW = len("Name"), len("Host")
 	for _, n := range names {
-		nameW = max(nameW, utf8.RuneCountInString(n))
+		nameW = max(nameW, stringWidth(n))
 	}
 	for _, h := range hosts {
-		hostW = max(hostW, utf8.RuneCountInString(h))
+		hostW = max(hostW, stringWidth(h))
 	}
 	nameW, hostW = min(nameW, nameMax), min(hostW, hostMax)
 	if wantSpark && nameW+1+hostW+fixed+1+SparkSeconds <= width {
@@ -362,7 +371,7 @@ func hopTable(hops []HopRow, width int) []line {
 	fixed := statsWidth(hopCols)
 	hostW := hostMin
 	for _, h := range hops {
-		hostW = max(hostW, utf8.RuneCountInString(h.Hosts))
+		hostW = max(hostW, stringWidth(h.Hosts))
 	}
 	hostW = max(min(hostW, width-4-fixed, 2*hostMax), hostMin)
 

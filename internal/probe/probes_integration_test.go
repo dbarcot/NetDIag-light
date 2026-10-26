@@ -8,6 +8,8 @@ import (
 	"net/netip"
 	"testing"
 	"time"
+
+	"netdiag/internal/clock"
 )
 
 // Each real probe once against its default public target (docs/PHASES.md
@@ -89,7 +91,7 @@ func TestReal_TraceReachesTheTarget(t *testing.T) {
 	var col collector
 	tr := &Tracer{
 		ICMP: WinICMP{}, Resolver: SystemResolver{}, Host: "1.1.1.1", MaxHops: 30,
-		Interval: MinTraceInterval, Timeout: time.Second, Clock: realClock{},
+		Interval: MinTraceInterval, Timeout: time.Second, Clock: clock.Real{},
 		Emit: col.emit, Register: col.reg,
 	}
 	for range 40 { // 5 packets/s at most, like Run

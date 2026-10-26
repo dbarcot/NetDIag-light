@@ -45,8 +45,11 @@ type Snapshot struct {
 	Specs          []Spec
 	// Hops are the TRC-01 hops seen so far (empty before the first trace).
 	Hops []probe.Hop
-	// AdapterEvents are the adapter changes of the run.
+	// AdapterEvents are the adapter changes of the run, oldest first.
 	AdapterEvents []AdapterChange
+	// AdapterEventsDropped counts old events no longer in AdapterEvents
+	// (0 until the Phase 9 cap; consumers track AdapterChange.Seq).
+	AdapterEventsDropped int
 	// CPUAvg10 is the average CPU % over the last 10 s (valid with HasCPU).
 	CPUAvg10 float64
 	HasCPU   bool
@@ -72,6 +75,7 @@ type Engine struct {
 	hops           func() []probe.Hop
 	generation     int // bumped by every adapter change
 	events         []AdapterChange
+	eventSeq       int // Seq of the newest adapter event
 }
 
 // AdapterInfo describes the primary adapter for the change event.
@@ -84,6 +88,9 @@ type AdapterInfo struct {
 // AdapterChange is the recorded "adapter_change" event (SPEC §6): shown in
 // the plain output now, in the CSV events and as a graph marker later.
 type AdapterChange struct {
+	// Seq numbers the events of a run from 1, never reused, so a consumer
+	// can tell which events it has seen even when old ones are dropped.
+	Seq      int
 	Time     time.Time
 	From, To AdapterInfo
 }
@@ -164,7 +171,8 @@ func (e *Engine) SetSystem(s System) {
 			}
 		}
 		e.store.ResetSeries(ids)
-		e.events = append(e.events, AdapterChange{Time: e.clock.Now(), From: adapterInfo(e.primary), To: adapterInfo(p)})
+		e.eventSeq++
+		e.events = append(e.events, AdapterChange{Seq: e.eventSeq, Time: e.clock.Now(), From: adapterInfo(e.primary), To: adapterInfo(p)})
 	}
 	e.primary, e.havePrimary = p, true
 	e.wifi = nil

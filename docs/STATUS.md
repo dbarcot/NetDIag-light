@@ -4,8 +4,8 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 
 ## Current state
 
-- **Last completed phase:** 5 — console view (`internal/console`), awaiting review.
-- **Next:** review fixes for Phase 5 if any, else Phase 6 — report, CSV logging, web server (backend).
+- **Last completed phase:** 5 — console view (`internal/console`), plus Phase 5 review fixes (R5-01…R5-08).
+- **Next phase:** 6 — report, CSV logging, web server (backend).
 - `netdiag run` and `run --sim` show the mtr-style live view on a console (plain lines when redirected) until q / Ctrl+C / end of scenario, then a final summary. `--headless` is still a stub (Phase 9).
 
 ## Completed phases
@@ -22,7 +22,8 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 | 3 fixes | `b68c35d` | HTTP-01 at L3 + `CAPTIVE_PORTAL` over ISP/DNS verdicts, `GW_ICMP_RATE_LIMITED`, NET-04 L3 recovery (`Sample.Recovery`), 4 new scenarios (39) |
 | 4 | `f766bc7` | probes: TCP, HTTP-01, SVC-01 (TLS), DNS-01 (`DnsQuery_W`) / DNS-02 (miekg), STUN + NAT-01 (pion), MTU-01, TRC-01 tracer, LAN-02, SYS-01, custom targets; `HTTP_CHECK_FILTERED`; `engine.RunLive` + `run` wiring |
 | 4 fixes | `b55db9c` | MTU-01 paced/confirmed/`Bound`, `MTU_ISSUE` only for a silent black hole + `MTU_REDUCED:<mtu>`, `Sample.RerunAfter`; adapter change clears series, new generation, `adapter_change` event; SVC-01 multi-IP; 3 scenarios (43 total) |
-| 5 | see `git log` | console: view model (`BuildView`), renderer (width-aware, sparkline, hops, colours), `console.Run` (TTY/plain, keys q/r, mode restore incl. panic), `sysapi.Console.Write` (WriteConsoleW) + `Height`, `Engine.Reset`, `sim.Play`/`LiveOn`, 66 goldens |
+| 5 | `78338ee` | console: view model (`BuildView`), renderer (width-aware, sparkline, hops, colours), `console.Run` (TTY/plain, keys q/r, mode restore incl. panic), `sysapi.Console.Write` (WriteConsoleW) + `Height`, `Engine.Reset`, `sim.Play`/`LiveOn`, 66 goldens |
+| 5 fixes | see `git log` | R5-01 `clean()` of untrusted text (tty + plain), R5-02 display width (`displayWidth`, no x/text), R5-03 `sysapi.splitChunks` (16384 units, after `\n`, surrogate-safe), R5-04 work/key-reader panics, R5-05 3 s shutdown grace + `Stopping…`, R5-06 `AdapterChange.Seq` + `AdapterEventsDropped`, R5-07 public IP ≤ 120 s old, R5-08 final summary width; goldens unchanged |
 
 ### Key decisions and SPEC deviations
 
@@ -37,12 +38,14 @@ Read this first in every session. Detail lives in `docs/SPEC.md`, `docs/PHASES.m
 
 - **Phase 5 decisions/deviations (SPEC §9 updated):** the screen is cleared once at start, then cursor-home redraws; frames are cut to the window **height** with `… N more lines: enlarge the window` (a taller frame scrolls and breaks cursor-home redraws, seen in a real terminal); last column left free. MTU-01 rows show `path MTU <n>`, no RTT columns/sparkline; SYS-01 only in the header. Columns shrink: sparkline first, then Host (min 10), then Name (min 6). A second without a sample is a space in the sparkline. Plain mode: changes + adapter events + a summary block on a fixed 30 s grid (indented, table at width 120) and `final:` block; also used when VT cannot be enabled on a console (written via WriteConsoleW). `NO_COLOR` counts when set at all (even empty). Main cancels on SIGTERM too (console close/logoff). Header: gateway MAC from the newest ok LAN-02 Detail, public IP from STUN mapped address, `Web UI: off` until Phase 6. `RunLive`/`sim.LiveOn` take the console's engine; their own plain printing is discarded (`Out` nil). Sim LAN-02 ok samples now carry the scenario gateway MAC.
 
+- **Phase 5 fixes:** `clean` maps invalid UTF-8, C0/C1, DEL, bidi controls and non-BMP runes to `?`; applied once in `BuildView` (`sanitize`) and to every plain line (`Describe`, adapter events). `displayWidth`: Mn/Me/Cf 0, listed East Asian ranges 2, else 1; `fit`/`trunc` pad instead of splitting a wide rune. Shutdown: `ShutdownGrace` = 3 s on the injected clock, then final summary + restore, return nil (late work return goes into the buffered channel). Work panic → `internal error: <p>`, stack to `Options.Logger` (the `--log` file, opened by `app.openLog` and shared with `realLive`). Plain mode tracks the last printed adapter event `Seq`. Final summary on a console: table min(width − 5, 200), title cut. Integration-only helpers (`openConsoleDevices`, probe `realClock`) moved into integration files so `golangci-lint run` without tags is clean too.
+
 ## Open items
 
 - **Review fixes pending:** none for Phases 1–4.
 - **Wiring still missing:** TEAMS-01/02, MEET-01, MEDIA-01, SRC-01 probes (Phase 8; their series exist for sim/verdicts but are not scheduled in a live run; the Teams line shows `-`); `CSV_WRITE_ERROR` is only set by sim events until Phase 6; `--headless` (Phase 9).
 - **Phase 6 must add:** web URL in `console.Meta.WebURL`; `r` must also reset the web graphs (shared `Engine.Reset`) and write a `reset` row to the events CSV (SPEC §9).
-- **Phase 9 hardening (memory on long headless runs, SPEC §12):** `Gates.history` (all gate transitions) and the engine's adapter events (`Engine.events`) grow without bound. Cap both (e.g. keep the last 1000), count what was dropped and report the count (report JSON, `GateHistory`/`AdapterEvents` callers) so a truncated history is visible. Add tests for the cap and the count.
+- **Phase 9 hardening (memory on long headless runs, SPEC §12):** `Gates.history` (all gate transitions) and the engine's adapter events (`Engine.events`) grow without bound. Cap both (e.g. keep the last 1000), count what was dropped and report the count (report JSON, `GateHistory`/`AdapterEvents` callers) so a truncated history is visible. The adapter-event cap must keep each event's `Seq` (never renumber) and fill `Snapshot.AdapterEventsDropped`; the console already prints by `Seq`. Add tests for the cap and the count.
 - **Known limitations:**
   - Simulations (real-time `Live`) can show `QUALITY_POOR_VOIP` for ~1 s when the internet drops, before the gates close (settled loss is not applied to MOS; seen in `isp_down`).
   - Very long hop lists or many custom targets are cut to the window height (no scrolling of the live view).
@@ -85,6 +88,7 @@ e2e (`-tags e2e`, chromedp) does not exist yet (Phase 7). Console goldens: `go t
 - The Bash tool breaks heredocs with apostrophes: write scripts/files with the Write tool (scratchpad) and run them.
 - Console view check: run `.\netdiag.exe run --sim testdata\scenarios\lan_loss.json` in a real terminal tab; the terminal panel is short (~30 rows), which is how the frame-height scroll bug showed up.
 - Fake-clock render loops: take the time from the ticker value, not `Clock.Now()` (the test may already have advanced the clock).
+- Tool parameters are JSON: `\u202E` typed into a Write call becomes the real (invisible) character. For control/bidi test strings write the file, then run `esc.py`-style escaping or check with staticcheck ST1018.
 
 - Go's monotonic clock on Windows reads interrupt time (0.5–15.6 ms steps): sub-ms RTTs read as 0 → use QPC (`internal/probe/qpc_windows.go`).
 - `os.Rename` on Windows replaces an existing file → `MoveFileEx(…, 0)` for "never overwrite".

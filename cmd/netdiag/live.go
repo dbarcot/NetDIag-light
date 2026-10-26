@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 
@@ -13,19 +12,23 @@ import (
 	"netdiag/internal/sysapi"
 )
 
-// realLive runs the real probes against the real network on eng until ctx
-// ends. With logPath set, warnings and probe panics go to that file
-// (slog); the console belongs to the renderer.
-func realLive(ctx context.Context, cfg *config.Config, eng *engine.Engine, logPath string) error {
-	var logger *slog.Logger
-	if logPath != "" {
-		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-		if err != nil {
-			return fmt.Errorf("--log: %w", err)
-		}
-		defer func() { _ = f.Close() }()
-		logger = slog.New(slog.NewTextHandler(f, nil))
+// openLogFile opens the --log file for slog (append). An empty path
+// means no log: a nil logger.
+func openLogFile(path string) (*slog.Logger, func(), error) {
+	if path == "" {
+		return nil, func() {}, nil
 	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, nil, err
+	}
+	return slog.New(slog.NewTextHandler(f, nil)), func() { _ = f.Close() }, nil
+}
+
+// realLive runs the real probes against the real network on eng until ctx
+// ends. With a logger (--log), warnings and probe panics go to that file;
+// the console belongs to the renderer.
+func realLive(ctx context.Context, cfg *config.Config, eng *engine.Engine, logger *slog.Logger) error {
 	sys := sysapi.NewSystem(logger)
 	c := clock.Real{}
 	_, err := engine.RunLive(ctx, engine.LiveOptions{

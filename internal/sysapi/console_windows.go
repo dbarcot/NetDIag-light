@@ -24,26 +24,6 @@ func NewConsole() *WinConsole {
 	return &WinConsole{in: in, out: out}
 }
 
-// openConsoleDevices opens CONIN$/CONOUT$ directly, bypassing redirected
-// standard handles (used by tests that run in their own console).
-func openConsoleDevices() (*WinConsole, func(), error) {
-	open := func(name string) (windows.Handle, error) {
-		p, _ := windows.UTF16PtrFromString(name)
-		return windows.CreateFile(p, windows.GENERIC_READ|windows.GENERIC_WRITE,
-			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, 0)
-	}
-	in, err := open("CONIN$")
-	if err != nil {
-		return nil, nil, err
-	}
-	out, err := open("CONOUT$")
-	if err != nil {
-		_ = windows.CloseHandle(in)
-		return nil, nil, err
-	}
-	return &WinConsole{in: in, out: out}, func() { _ = windows.CloseHandle(in); _ = windows.CloseHandle(out) }, nil
-}
-
 func (WinConsole) ProcessCount() (int, error) {
 	// The list is only needed for its length; when the buffer is too small
 	// the call still returns the total count.
@@ -129,27 +109,21 @@ func (c *WinConsole) ReadKey(ctx context.Context) (Key, error) {
 	}
 }
 
-// writeChunk bounds one WriteConsoleW call (UTF-16 units).
-const writeChunk = 8192
-
 func (c *WinConsole) Write(p []byte) (int, error) {
 	if _, err := getMode(c.out); err != nil {
 		return 0, err
 	}
-	u := utf16.Encode([]rune(string(p)))
-	for len(u) > 0 {
-		n := min(len(u), writeChunk)
-		if n < len(u) && utf16.IsSurrogate(rune(u[n-1])) {
-			n-- // keep a surrogate pair in one call
+	for _, chunk := range splitChunks(utf16.Encode([]rune(string(p))), WriteChunk) {
+		for len(chunk) > 0 {
+			var written uint32
+			if err := windows.WriteConsole(c.out, &chunk[0], uint32(len(chunk)), &written, nil); err != nil {
+				return 0, fmt.Errorf("WriteConsoleW: %w", err)
+			}
+			if written == 0 {
+				return 0, fmt.Errorf("WriteConsoleW: nothing written")
+			}
+			chunk = chunk[written:]
 		}
-		var written uint32
-		if err := windows.WriteConsole(c.out, &u[0], uint32(n), &written, nil); err != nil {
-			return 0, fmt.Errorf("WriteConsoleW: %w", err)
-		}
-		if written == 0 {
-			return 0, fmt.Errorf("WriteConsoleW: nothing written")
-		}
-		u = u[written:]
 	}
 	return len(p), nil
 }

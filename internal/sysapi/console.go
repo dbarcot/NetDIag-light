@@ -110,3 +110,38 @@ func (s *RawSession) Restore() error {
 	})
 	return s.restoreErr
 }
+
+// WriteChunk bounds one WriteConsoleW call (UTF-16 units).
+const WriteChunk = 16384
+
+// splitChunks splits UTF-16 text for WriteConsoleW: every chunk has at
+// most limit units and the chunks concatenate to u. A chunk that is not the
+// last ends after its last '\n' when it has one, so neither a line nor a
+// VT sequence (which never spans a line break) is split across calls;
+// only a single line longer than limit is cut hard, and never after a high
+// surrogate (the pair stays together).
+func splitChunks(u []uint16, limit int) [][]uint16 {
+	limit = max(limit, 2) // room for a surrogate pair
+	var out [][]uint16
+	for len(u) > limit {
+		n := 0
+		for i := limit - 1; i >= 0; i-- {
+			if u[i] == '\n' {
+				n = i + 1
+				break
+			}
+		}
+		if n == 0 {
+			n = limit
+			if u[n-1] >= 0xD800 && u[n-1] <= 0xDBFF {
+				n--
+			}
+		}
+		out = append(out, u[:n])
+		u = u[n:]
+	}
+	if len(u) > 0 {
+		out = append(out, u)
+	}
+	return out
+}

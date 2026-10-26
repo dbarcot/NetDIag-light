@@ -432,6 +432,3 @@ func TestTracer_HopNames(t *testing.T) {
 		t.Errorf("hop 1 %+v", h)
 	}
 }
-
-// realClock is the system clock for tests that must not use the fake one.
-type realClock struct{ clock.Real }
